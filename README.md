@@ -1,5 +1,7 @@
 Alzheimer's Research Assistant
 A specialized chatbot for analyzing, retrieving, and synthesizing information from Alzheimer's disease research papers.
+
+
 📋 Project Overview
 This project implements a disease-specific chatbot designed to help researchers, healthcare professionals, and students navigate the complex landscape of Alzheimer's disease research. The system can analyze multiple research papers simultaneously, extract relevant information, identify contradictions or agreements between different studies, and provide comprehensive answers to specific questions.
 Two distinct implementation approaches were developed and compared:
