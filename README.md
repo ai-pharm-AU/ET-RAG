@@ -60,9 +60,6 @@ Google Gemini API key
 
 Installation Steps
 
-Clone this repository:
-git clone https://github.com/yourusername/alzheimers-research-assistant.git
-cd alzheimers-research-assistant
 
 Create a virtual environment and activate it:
 python -m venv venv
