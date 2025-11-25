@@ -1,0 +1,11 @@
+stage 
+
+1. data: Alzheimer's disase 10 pdf review papers
+1.1. benchmarking question 10 single choice 10 multiple choice, open question
+1.2. look for the sota algorithm such as COS-Mix, our cosine and potential more advanced model to be compared (methodology)
+2. method: comparative AI model (gemini, openAI, llama, claude AI...)
+2.1. compare the performance 
+2.2. the performance metrics based on the relevant, hallucination, the rejection to the false statement, resolve the conflict content, and summarization
+3. scale up test to more than 10 papers (15, 20)
+3.1. compare the changes
+3.2. unique content (marginal information contribution)
