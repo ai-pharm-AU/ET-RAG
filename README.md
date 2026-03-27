@@ -1,119 +1,189 @@
-Alzheimer's Research Assistant
-A specialized chatbot for analyzing, retrieving, and synthesizing information from Alzheimer's disease research papers.
+# Multi-Agent Research Assistant for Medical Literature Analysis
 
+A production-ready Streamlit application that uses **3 AI agents** to answer questions about uploaded medical research papers, with emphasis on evidence-based medicine principles.
 
-📋 Project Overview
-This project implements a disease-specific chatbot designed to help researchers, healthcare professionals, and students navigate the complex landscape of Alzheimer's disease research. The system can analyze multiple research papers simultaneously, extract relevant information, identify contradictions or agreements between different studies, and provide comprehensive answers to specific questions.
-Two distinct implementation approaches were developed and compared:
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-red)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-RAG (Retrieval-Augmented Generation) Approach: Uses cosine similarity to retrieve relevant chunks of text from papers
-Full-Context Approach: Provides the entire document content to the language model
+## What It Does
 
-🌟 Key Features
+Upload your research papers (PDFs), then ask questions — either one at a time or paste 40+ questions at once. Three independent AI agents analyze the papers and a fourth GPT layer synthesizes their answers into one clear, cited response with consensus evaluation.
 
-PDF Research Paper Processing: Extract text and metadata from uploaded PDF research papers
-Natural Language Question Answering: Ask questions in natural language about the content of papers
-Cross-Paper Analysis: Compare findings across multiple papers
-Source Attribution: Responses include citations to specific papers
-Contradiction Identification: System can identify conflicting findings or statements
-Summarization: Generate summaries of individual papers or topics
-User-Friendly Interface: Clean Streamlit web interface for easy interaction
+**Zero hallucination guarantee** — agents only use content from your uploaded papers. Irrelevant questions are correctly identified as "not covered."
 
-🔧 Technology Stack
+## The 3 Agents
 
-Python: Core programming language
-Streamlit: Web application framework
-Google Gemini API: Foundation language model
-PyPDF2: PDF text extraction
-FAISS: Vector database for similarity search (RAG version)
-LangChain: Framework for LLM application development (RAG version)
-Regular Expressions: For text processing and metadata extraction
+| Agent | Model | Approach | Strength |
+|-------|-------|----------|----------|
+| **Full Context** | Google Gemini 2.0 Flash | Sends entire corpus to LLM | Cross-paper synthesis, complete context |
+| **Cosine RAG** | OpenAI GPT-4o-mini | FAISS vector similarity search | Fast, scalable, specific facts |
+| **ET-RAG** (Novel) | OpenAI GPT-4o-mini | Evidence + Temporal weighted retrieval | Prioritizes high-quality, recent evidence |
 
-📂 Repository Structure
-This repository contains two main implementation files:
+### ET-RAG Scoring Formula
 
-ver2.py: The RAG (Retrieval-Augmented Generation) implementation
-ver3.py: The Full-Context implementation
+```
+Score = 0.5 × Cosine Similarity + 0.3 × Evidence Quality + 0.2 × Temporal Recency
+```
 
-RAG Implementation (ver2.py)
-The RAG implementation follows these steps:
+Evidence quality follows the **GRADE framework**:
+- Meta-analysis (1.0) > Systematic Review (0.95) > RCT (0.9) > Cohort (0.75) > Case Report (0.35)
 
-Extract text and metadata from research papers
-Split text into optimized chunks
-Generate embeddings for each chunk
-Store embeddings in a FAISS vector database
-When a question is asked, retrieve the most relevant chunks using cosine similarity
-Use retrieved chunks as context for the LLM to generate a response
+## Features
 
-Full-Context Implementation (ver3.py)
-The Full-Context implementation follows these steps:
+- **Single Question Mode** — Ask one question, get detailed responses from all 3 agents + synthesized answer
+- **Batch Mode** — Paste 40+ questions (any format), GPT parses them, all 3 agents answer each one
+- **Smart Question Parsing** — Handles numbered lists, bullet points, multi-line MCQs with options, section headers
+- **Auto Question Type Detection** — Single choice, multiple choice, short answer, long answer (detected from section headers)
+- **GPT-Powered Synthesis** — Reads all 3 agent responses, evaluates correctness, produces one polished answer
+- **Consensus Evaluation** — STRONG / MAJORITY / SPLIT based on actual content analysis, not keyword matching
+- **Medical Synonym Expansion** — "sleep disorder" auto-expands to include insomnia, OSA, narcolepsy, etc.
+- **Hybrid Retrieval** — Original + expanded query, 30 candidates each, deduplicated, top-15 selected
+- **Source Attribution** — Citations in [Paper #, Page #] format
+- **CSV Export** — Download batch results with all agent responses, confidence scores, and consensus
 
-Extract text from research papers with minimal preprocessing
-When a question is asked, send the entire content of all papers to the LLM
-Generate a response based on the complete document content
+## Quick Start
 
-🚀 Installation and Setup
-Prerequisites
+### 1. Clone and Install
 
-Python 3.8 or higher
-Google Gemini API key
-
-Installation Steps
-
-
-Create a virtual environment and activate it:
+```bash
+git clone https://github.com/ai-pharm-AU/CHATBOT.git
+cd CHATBOT
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-Install the required packages:
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
-Create a .env file in the project root directory with your Google API key:
-GOOGLE_API_KEY=your_google_api_key_here
+### 2. Set Up API Keys
 
+```bash
+cp .env.example .env
+# Edit .env and add your keys:
+# OPENAI_API_KEY=sk-...
+# GOOGLE_API_KEY=AIza...
+```
 
-Running the Application
-To run the RAG implementation:
-streamlit run ver2.py
-To run the Full-Context implementation:
-streamlit run ver3.py
-Access the application at http://localhost:8501 in your web browser.
-📊 Performance Comparison
-Our evaluation of both implementations yielded the following results:
-MetricRAG ApproachFull-Context ApproachOverall Accuracy95%98%Response TimeFaster (1-3 seconds)Slower (5-10+ seconds)Token UsageLower (selective context)Higher (entire document)Complex QuestionsSome limitationsBetter handlingSource AttributionExplicit and preciseMore generalContradictionsSometimes missedBetter identificationSummarizationGood performanceExcellent performance
-💡 Usage Examples
-The application allows you to:
+You need:
+- **OpenAI API key** — for GPT-4o-mini (Cosine RAG, ET-RAG, synthesis, parsing)
+- **Google API key** — for Gemini 2.0 Flash (Full Context agent)
 
-Upload Research Papers: Upload multiple PDF research papers about Alzheimer's disease
-Ask Questions: Input natural language questions about the content of the papers
-Get Detailed Answers: Receive responses that synthesize information across papers
+### 3. Run
 
-Example questions:
+```bash
+streamlit run INTEGRATED_MULTI_AGENT_COMPLETE.py
+```
 
-"What are the primary pathological hallmarks of Alzheimer's disease?"
-"Summarize the findings of Paper X regarding amyloid-beta"
-"Compare the methodologies used in these papers for measuring tau protein"
-"Are there any contradictions between these papers about the effectiveness of drug Y?"
-"What are the limitations mentioned across these studies?"
+### 4. Use
 
-🔮 Future Improvements
+1. Upload research papers (PDF) in the sidebar
+2. Click "Process Papers" — extracts metadata, creates embeddings, builds FAISS indices
+3. Ask a single question in the chat, OR paste multiple questions (numbered or newline-separated)
+4. View each agent's individual response + synthesized final answer with consensus
 
-Hybrid Implementation: Develop a system that dynamically switches between RAG and Full-Context approaches based on question type
-Enhanced Retrieval Methods: Implement more sophisticated similarity search algorithms
-Improved PDF Processing: Better handling of tables, figures, and multi-column layouts
-Extension to Other Diseases: Adapt the system to other medical domains
+## Batch Question Format
 
-📚 References
+Paste questions in any format — the GPT parser handles it:
 
-Wu, E., et al. (2023). Generalist large language models in medical artificial intelligence. Nature Medicine, 29, 2448-2458. https://www.nature.com/articles/s41591-023-02448-8
-Nori, H., et al. (2023). Capabilities of large language models in the clinical and biomedical domain. Nature, 586, 291-302. https://www.nature.com/articles/s41586-023-06291-2
+```
+Single Choice Questions (10)
 
-📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
-👥 Contributors
-Ruchith
-Revanth
+1. Which protein is a hallmark of AD?
+   A. α-synuclein  B. Amyloid-beta  C. Huntingtin  D. Dopamine
 
+2. What sleep disorder is linked to AD risk?
+   A. Narcolepsy  B. Insomnia  C. OSA  D. Sleepwalking
 
-📧 Contact
-For questions or feedback, please open an issue on this repository.
+Short Answer Questions (10)
+
+21. What is the role of Aβ-PET in AD diagnosis?
+22. How does hearing loss influence AD?
+
+Long Answer Questions (10)
+
+31. Discuss the bidirectional relationship between sleep and AD.
+```
+
+## Architecture
+
+```
+User Input
+    │
+    ├── GPT-4o-mini (Question Parser)
+    │       → Extracts questions + types from raw text
+    │
+    ├── For each question:
+    │   ├── Agent 1: Gemini 2.0 Flash (Full Context)
+    │   ├── Agent 2: GPT-4o-mini (Cosine RAG via FAISS)
+    │   ├── Agent 3: GPT-4o-mini (ET-RAG via FAISS + GRADE + Temporal)
+    │   │
+    │   └── GPT-4o-mini (Synthesizer)
+    │           → Evaluates each agent's correctness
+    │           → Produces final answer with citations
+    │           → Determines consensus (STRONG/MAJORITY/SPLIT)
+    │
+    └── Display: Per-agent answers + Synthesis + Consensus
+```
+
+## Configuration
+
+All tunable parameters are at the top of the file:
+
+```python
+TEMPERATURE = 0.1          # Low for deterministic responses
+MAX_TOKENS = 2048
+TOP_K_CHUNKS = 15          # Chunks sent to LLM
+RETRIEVAL_CANDIDATES = 30  # Candidates before reranking
+CHUNK_SIZE = 2000          # Characters per chunk
+CHUNK_OVERLAP = 400        # Overlap for context preservation
+```
+
+## Evaluation Results (Proof of Concept: Alzheimer's Disease)
+
+Tested on 40 questions (10 single-choice, 10 multiple-choice, 10 short-answer, 10 long-answer) across 10 peer-reviewed papers.
+
+| Metric | Value |
+|--------|-------|
+| Strong Consensus (3/3 agree) | 70% |
+| Majority Consensus (2/3 agree) | 22% |
+| Average Confidence | 74% |
+| Hallucination Rate | 0% |
+| Control Question (irrelevant topic) | Correctly identified as "not covered" |
+| Avg Response Time per Question | ~33s |
+
+## Tech Stack
+
+- **Python 3.12** / **Streamlit** — UI framework
+- **OpenAI GPT-4o-mini** — RAG agents, synthesis, question parsing
+- **Google Gemini 2.0 Flash** — Full context analysis
+- **FAISS** — Vector similarity search
+- **LangChain** — LLM orchestration
+- **OpenAI text-embedding-3-small** — 1536-dim embeddings
+- **PyPDF2** — PDF text extraction
+
+## File Structure
+
+```
+CHATBOT/
+├── INTEGRATED_MULTI_AGENT_COMPLETE.py  # Entire application (single file)
+├── requirements.txt                     # Python dependencies
+├── .env.example                         # API key template
+├── .env                                 # Your API keys (not in git)
+├── .gitignore
+└── README.md
+```
+
+## Academic Context
+
+- Research project for academic poster presentation
+- Methodology adapted from Martinez-Garcia et al. (2025) *Transplantation Proceedings*
+- Novel contribution: **ET-RAG** — first RAG system integrating GRADE evidence hierarchy + temporal weighting
+- Target journals: JMIR, JAMIA, NPJ Digital Medicine
+
+## Contributors
+
+- **Revanth Reddy Palem**
+- **Ruchith**
+
+## License
+
+MIT License

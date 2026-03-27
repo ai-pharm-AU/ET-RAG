@@ -1,0 +1,28 @@
+# Core
+streamlit
+python-dotenv
+PyPDF2
+
+# OpenAI
+openai
+langchain-openai
+
+# Google (for Full Context approach)
+google-generativeai
+langchain-google-genai
+
+# LangChain - All required packages
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+
+# Vector Store
+faiss-cpu
+
+# Data
+pandas
+numpy
+
+# Pydantic (pin to compatible version)
+pydantic>=2.0,<3.0

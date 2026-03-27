@@ -1,0 +1,26 @@
+# API keys - NEVER push
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# FAISS indices (generated at runtime)
+faiss_index_cosine/
+faiss_index_etrag/
+faiss_index/
+cosine_index/
+etrag_index/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Results/data files
+*.json
+data/
