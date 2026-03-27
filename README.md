@@ -183,6 +183,3 @@ CHATBOT/
 
 - **Revanth Reddy Palem**
 
-## License
-
-MIT License
