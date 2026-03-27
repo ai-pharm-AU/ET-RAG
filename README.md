@@ -182,7 +182,6 @@ CHATBOT/
 ## Contributors
 
 - **Revanth Reddy Palem**
-- **Ruchith**
 
 ## License
 
