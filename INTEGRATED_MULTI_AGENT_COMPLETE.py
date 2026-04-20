@@ -4,9 +4,9 @@ MULTI-AGENT ALZHEIMER'S RESEARCH CHATBOT
 Production-Ready Version
 
 Three AI Agents Answer Your Research Questions:
-- Full Context Agent (Gemini 2.0 Flash) - Analyzes entire corpus
-- Cosine RAG Agent (GPT-4o-mini) - Smart semantic retrieval  
-- ET-RAG Agent (GPT-4o-mini) - Evidence + Recency weighted
+- Full Context Agent (GPT-4o-mini) - Analyzes condensed corpus (10K/paper)
+- Cosine RAG Agent (GPT-4o-mini) - Multi-query semantic retrieval
+- ET-RAG Agent (GPT-4o-mini) - Hybrid: Evidence-weighted retrieval + paper context
 
 Features:
 - Upload your own research papers
@@ -34,16 +34,17 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 # Model settings for consistency
-TEMPERATURE = 0.1  # Very low for deterministic responses
+TEMPERATURE = 0.0  # Fully deterministic for medical accuracy
 MAX_TOKENS = 2048
-TOP_K_CHUNKS = 15  # Increased from 8 for better coverage
-RETRIEVAL_CANDIDATES = 30  # Retrieve more, then rerank
+TOP_K_CHUNKS = 20  # More chunks for better coverage
+RETRIEVAL_CANDIDATES = 40  # Retrieve more, then rerank
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 400
 CURRENT_YEAR = 2025
@@ -91,6 +92,12 @@ if "paper_metadata" not in st.session_state:
     st.session_state.paper_metadata = {}
 if "raw_texts" not in st.session_state:
     st.session_state.raw_texts = {}
+if "vector_store_cosine" not in st.session_state:
+    st.session_state.vector_store_cosine = None
+if "vector_store_etrag" not in st.session_state:
+    st.session_state.vector_store_etrag = None
+if "embeddings_model" not in st.session_state:
+    st.session_state.embeddings_model = None
 
 # ============================================================================
 # QUERY EXPANSION
@@ -102,6 +109,8 @@ def expand_query(question):
     # Common medical term expansions
     expansions = {
         'sleep disorder': 'sleep disorder OR sleep disturbance OR insomnia OR sleep apnea OR OSA OR narcolepsy OR sleep problem',
+        'sleep stage': 'sleep stage OR NREM OR REM OR slow-wave OR sleep architecture OR sleep cycle',
+        'metabolite clearance': 'metabolite clearance OR glymphatic OR Aβ clearance OR waste clearance OR brain clearance',
         'AD': 'AD OR Alzheimer OR Alzheimer\'s disease OR dementia',
         'imaging': 'imaging OR scan OR PET OR MRI OR CT OR SPECT',
         'amyloid': 'amyloid OR Aβ OR A-beta OR amyloid-beta OR plaque',
@@ -116,6 +125,9 @@ def expand_query(question):
         'cognitive': 'cognitive OR cognition OR memory OR thinking',
         'hearing loss': 'hearing loss OR hearing impairment OR deafness OR auditory dysfunction',
         'gut': 'gut OR microbiome OR microbiota OR intestinal OR gastrointestinal',
+        'diet': 'diet OR dietary OR Mediterranean OR nutrition OR food',
+        'hypoxia': 'hypoxia OR oxygen OR ischemia OR cerebrovascular',
+        'volume change': 'volume change OR atrophy OR hippocampal volume OR brain volume OR shrinkage',
     }
     
     expanded = question.lower()
@@ -256,24 +268,27 @@ def create_vector_stores(chunks):
             progress.progress(min(batch_count / (total_batches * 2), 0.5))
         
         vector_store_cosine.save_local("faiss_index_cosine")
-        
+        st.session_state.vector_store_cosine = vector_store_cosine
+
         # ET-RAG (same chunks, different retrieval)
         vector_store_etrag = None
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
-            
+
             if vector_store_etrag is None:
                 vector_store_etrag = FAISS.from_texts(batch, embedding=embeddings)
             else:
                 batch_store = FAISS.from_texts(batch, embedding=embeddings)
                 vector_store_etrag.merge_from(batch_store)
-            
+
             batch_count += 1
             progress.progress(min(batch_count / (total_batches * 2), 1.0))
-        
+
         vector_store_etrag.save_local("faiss_index_etrag")
+        st.session_state.vector_store_etrag = vector_store_etrag
+        st.session_state.embeddings_model = embeddings
         progress.progress(1.0)
-        
+
         return True
         
     except Exception as e:
@@ -285,176 +300,141 @@ def create_vector_stores(chunks):
 # AGENT 1: FULL CONTEXT (GEMINI)
 # ============================================================================
 
-def agent_full_context(question):
-    """Full Context agent using Gemini"""
-    
+def agent_full_context(question, paper_metadata=None, raw_texts=None, question_type='short_answer'):
+    """Full Context agent using GPT-4o-mini — sees condensed content from ALL papers."""
+
     try:
-        paper_count = len(st.session_state.paper_metadata)
-        
-        # Combine all papers
+        paper_metadata = paper_metadata or st.session_state.paper_metadata
+        raw_texts = raw_texts or st.session_state.raw_texts
+
+        expanded = expand_query(question)
+
+        # Build condensed full context — 10K chars per paper
         all_text = ""
         references = []
-        
-        for idx, (filename, metadata) in enumerate(st.session_state.paper_metadata.items(), 1):
-            paper_text = st.session_state.raw_texts.get(filename, "")
-            
+        for idx, (filename, metadata) in enumerate(paper_metadata.items(), 1):
+            paper_text = raw_texts.get(filename, "")
             ref = f"[{idx}] {metadata.get('title', filename)} ({metadata.get('year', 'Unknown')})"
             references.append(ref)
-            
-            header = f"\n{'='*60}\nPAPER {idx}: {metadata['title']}\nYEAR: {metadata['year']}\n{'='*60}\n\n"
-            all_text += header + paper_text + "\n\n"
-        
-        # Truncate if needed
-        if len(all_text) > 800000:
-            all_text = all_text[:800000]
-        
-        # Expand query for better matching
-        expanded = expand_query(question)
-        
-        prompt = f"""You are a medical research assistant analyzing {paper_count} research papers.
+            condensed = paper_text[:8000] if len(paper_text) > 8000 else paper_text
+            all_text += f"\nPAPER {idx}: {metadata['title']} ({metadata['year']})\n{condensed}\n\n"
 
-CRITICAL SEARCH REQUIREMENTS:
+        # Build question-type-specific instructions
+        if question_type == 'multiple_choice':
+            type_instruction = "MULTIPLE CHOICE: Select ALL options that are supported. Start with letters like 'A, B, C'."
+        elif question_type == 'single_choice':
+            type_instruction = "SINGLE CHOICE: Pick the ONE best answer. Start with the letter."
+        elif question_type == 'long_answer':
+            type_instruction = "Answer in 200-250 words."
+        else:
+            type_instruction = "Answer in 100-150 words."
 
-1. SEARCH EXHAUSTIVELY:
-   - Read ALL {paper_count} papers completely
-   - Search for EXACT terms AND synonyms
-   - Check ALL sections: abstract, introduction, methods, results, discussion
-   - Look for direct mentions AND indirect references
+        prompt = f"""Answer using ONLY the papers below.
 
-2. SYNONYM AWARENESS:
-   - "sleep disorder" = insomnia, sleep apnea, OSA, narcolepsy, sleep disturbance
-   - "AD" = Alzheimer's disease, Alzheimer disease, dementia
-   - "imaging" = PET, MRI, CT, SPECT, scan
-   - "amyloid" = Aβ, A-beta, plaque
-   - Search for ALL variations
+QUESTION: {question}
 
-3. CITATION REQUIREMENTS:
-   - Cite as [Paper #, Page #]
-   - Use Paper numbers from list below
-   - DO NOT cite external papers
+{type_instruction}
+Cite using paper title and year. Do NOT use external knowledge.
+Say "not covered" ONLY if topic is about a completely different field.
 
-4. IF NOT FOUND:
-   - Only say "not covered" after searching ALL papers with ALL synonyms
-   - Be thorough - don't give up easily
-
-PAPERS:
-{chr(10).join(references)}
-
-FULL CONTENT:
+PAPERS CONTENT:
 {all_text}
-
-ORIGINAL QUESTION: {question}
-
-EXPANDED SEARCH TERMS: {expanded}
-
-Search thoroughly using both the original question and expanded terms. Provide your answer with citations [Paper #, Page #]:
 """
-        
-        genai_model = genai.GenerativeModel("gemini-2.0-flash")
 
-        # Retry with exponential backoff for rate limits
-        response = None
-        for attempt in range(5):
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=TEMPERATURE, max_tokens=MAX_TOKENS)
+
+        for retry in range(3):
             try:
-                response = genai_model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=TEMPERATURE,
-                        max_output_tokens=MAX_TOKENS
-                    )
-                )
-                break  # Success
+                response = llm.invoke(prompt)
+                answer = response.content.strip()
+
+                # Calculate confidence based on answer quality
+                if "not covered" in answer.lower():
+                    confidence = 0.92
+                elif len(answer) > 500:
+                    confidence = 0.85
+                elif len(answer) > 200:
+                    confidence = 0.75
+                else:
+                    confidence = 0.60
+
+                # Extract files used from citations in the answer
+                files_used = []
+                for idx, (filename, metadata) in enumerate(paper_metadata.items(), 1):
+                    title = metadata.get('title', '')
+                    if title.lower()[:20] in answer.lower():
+                        files_used.append(filename)
+
+                return {
+                    "answer": answer,
+                    "confidence": confidence,
+                    "files_used": list(set(files_used)),
+                    "success": True
+                }
             except Exception as api_err:
-                if '429' in str(api_err) or 'Resource exhausted' in str(api_err):
-                    wait_time = (2 ** attempt) * 2  # 2, 4, 8, 16, 32 seconds
-                    time.sleep(wait_time)
+                if '429' in str(api_err) or 'Rate limit' in str(api_err):
+                    time.sleep((retry + 1) * 5)
                 else:
                     raise api_err
 
-        if response and hasattr(response, 'text'):
-            answer = response.text.strip()
-            
-            # Extract citations
-            citations = re.findall(r'\[Paper (\d+),?\s*Page[s]?\s*([\d\-,\s]+)\]', answer)
-            
-            # Calculate confidence
-            if "not covered" in answer.lower():
-                confidence = 0.92
-            elif len(citations) >= 2:
-                confidence = 0.85
-            elif len(citations) >= 1:
-                confidence = 0.75
-            else:
-                confidence = 0.60
-            
-            # Extract which files were cited
-            files_used = []
-            for cite in citations:
-                paper_num = int(cite[0])
-                for idx, (filename, _) in enumerate(st.session_state.paper_metadata.items(), 1):
-                    if idx == paper_num:
-                        files_used.append(filename)
-                        break
-            
-            return {
-                "answer": answer,
-                "confidence": confidence,
-                "files_used": list(set(files_used)),
-                "success": True
-            }
-        
-        return {
-            "answer": "No response from model",
-            "confidence": 0.0,
-            "files_used": [],
-            "success": False
-        }
-        
+        return {"answer": "Error: Rate limit", "confidence": 0.0, "files_used": [], "success": False}
+
     except Exception as e:
-        return {
-            "answer": f"Error: {str(e)}",
-            "confidence": 0.0,
-            "files_used": [],
-            "success": False
-        }
+        return {"answer": f"Error: {str(e)}", "confidence": 0.0, "files_used": [], "success": False}
 
 
 # ============================================================================
 # AGENT 2: COSINE RAG (OPENAI)
 # ============================================================================
 
-def agent_cosine_rag(question):
-    """Cosine RAG agent using OpenAI with improved retrieval"""
-    
+def extract_key_terms(question):
+    """Extract key medical terms for multi-query retrieval."""
+    q = question.lower()
+    for w in ['what','how','why','does','is','are','the','of','in','to','and','a','an','can','may',
+              'according','recent','studies','describe','explain','discuss','evaluate','analyze',
+              'compare','contrast','summarize','role','influence','effect','significance','purpose','using']:
+        q = q.replace(f' {w} ', ' ')
+    words = [w.strip('?.,') for w in q.split() if len(w) > 3]
+    terms = words[:6]
+    for i in range(min(len(words)-1, 4)):
+        terms.append(f"{words[i]} {words[i+1]}")
+    return terms[:8]
+
+
+def multi_query_retrieve(vector_store, question, k=RETRIEVAL_CANDIDATES):
+    """Retrieve chunks using multiple search strategies for better coverage."""
+    all_docs = {}
+    # Strategy 1: Original question
+    for doc, score in vector_store.similarity_search_with_score(question, k=k):
+        key = doc.page_content[:100]
+        if key not in all_docs or score < all_docs[key][1]:
+            all_docs[key] = (doc, score)
+    # Strategy 2: Expanded query with synonyms
+    expanded = expand_query(question)
+    for doc, score in vector_store.similarity_search_with_score(expanded, k=k):
+        key = doc.page_content[:100]
+        if key not in all_docs or score < all_docs[key][1]:
+            all_docs[key] = (doc, score)
+    # Strategy 3: Individual key terms
+    for term in extract_key_terms(question):
+        for doc, score in vector_store.similarity_search_with_score(term, k=10):
+            key = doc.page_content[:100]
+            if key not in all_docs or score < all_docs[key][1]:
+                all_docs[key] = (doc, score)
+    return all_docs
+
+
+def agent_cosine_rag(question, vector_store=None, question_type='short_answer'):
+    """Cosine RAG agent with multi-query retrieval"""
+
     try:
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        vector_store = FAISS.load_local(
-            "faiss_index_cosine",
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-        
-        # Expand query for better retrieval
-        expanded = expand_query(question)
-        
-        # Retrieve more candidates
-        docs_with_scores = vector_store.similarity_search_with_score(
-            question, 
-            k=RETRIEVAL_CANDIDATES
-        )
-        
-        # Also search with expanded query
-        expanded_docs = vector_store.similarity_search_with_score(
-            expanded,
-            k=RETRIEVAL_CANDIDATES
-        )
-        
-        # Combine and deduplicate
-        all_docs = {}
-        for doc, score in docs_with_scores + expanded_docs:
-            doc_key = doc.page_content[:100]  # Use first 100 chars as key
-            if doc_key not in all_docs or score < all_docs[doc_key][1]:
-                all_docs[doc_key] = (doc, score)
+        if vector_store is None:
+            embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+            vector_store = FAISS.load_local(
+                "faiss_index_cosine", embeddings, allow_dangerous_deserialization=True
+            )
+
+        all_docs = multi_query_retrieve(vector_store, question)
         
         # Sort by score and take top K
         sorted_docs = sorted(all_docs.values(), key=lambda x: x[1])[:TOP_K_CHUNKS]
@@ -478,36 +458,45 @@ def agent_cosine_rag(question):
         
         context = "\n\n".join([doc.page_content for doc in docs])
         
-        prompt_template = """Answer the question using the context below.
+        # Build question-type-specific instructions
+        if question_type == 'multiple_choice':
+            type_rule = "MULTIPLE CHOICE: Evaluate EACH option (A, B, C, D) INDEPENDENTLY. For each, ask: is there evidence in the context? Select ALL supported options, not just the best one. Format: list all correct letters, then brief explanation for each. Keep response under 150 words."
+        elif question_type == 'single_choice':
+            type_rule = "SINGLE CHOICE: Pick the ONE best answer supported by the context. Keep response under 100 words."
+        elif question_type == 'long_answer':
+            type_rule = "Answer in 3-4 paragraphs with evidence. Keep response between 200-250 words."
+        else:
+            type_rule = "Answer in 2-4 concise sentences. Keep response between 100-150 words."
 
-CONTEXT (top {k} most relevant sections):
-{context}
+        prompt_template = f"""Answer the question using ONLY the research paper excerpts below.
 
-QUESTION: {question}
+CONTEXT:
+{{context}}
 
-INSTRUCTIONS:
-- Answer based on the context provided
-- If the context discusses the topic but doesn't give exact answer, INFER from available information
-- Search for exact terms AND synonyms (e.g., "sleep disorder" includes insomnia, OSA, sleep apnea, sleep disturbances)
-- If the context mentions sleep problems, disturbances, or issues in relation to AD, identify which specific type
-- Cite sources from the papers
-- ONLY say "not covered" if there is ZERO mention of the topic
-- Do NOT cite external papers
+QUESTION: {{question}}
+
+{type_rule}
+
+RULES:
+- Cite using paper title and year, e.g., (Alzheimer disease, 2021).
+- Look for synonyms (e.g., "metabolite clearance" = "Aβ clearance", "glymphatic system").
+- Use partial information rather than saying "not covered."
+- Say "not covered" ONLY if topic is completely absent.
+- Do NOT use external knowledge. Do NOT repeat yourself.
 
 Answer:
 """
 
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=TEMPERATURE, max_tokens=MAX_TOKENS)
         prompt = PromptTemplate(
-            template=prompt_template, 
-            input_variables=["context", "question", "k"]
+            template=prompt_template,
+            input_variables=["context", "question"]
         )
         chain = load_qa_chain(llm, chain_type="stuff", prompt=prompt)
-        
+
         result = chain.invoke({
-            "input_documents": docs, 
-            "question": question,
-            "k": TOP_K_CHUNKS
+            "input_documents": docs,
+            "question": question
         })
         answer = result["output_text"].strip()
         
@@ -554,130 +543,126 @@ def calculate_temporal_weight(year):
         return 0.5
 
 
-def agent_etrag(question):
-    """ET-RAG agent with evidence and temporal weighting + improved retrieval"""
-    
+def agent_etrag(question, vector_store=None, question_type='short_answer', paper_metadata=None, raw_texts=None):
+    """ET-RAG: Hybrid agent — retrieved chunks (reranked by evidence + recency) + condensed paper context."""
+
     try:
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        vector_store = FAISS.load_local(
-            "faiss_index_etrag",
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-        
-        # Expand query for better retrieval
+        if vector_store is None:
+            embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+            vector_store = FAISS.load_local(
+                "faiss_index_etrag", embeddings, allow_dangerous_deserialization=True
+            )
+
+        paper_metadata = paper_metadata or st.session_state.paper_metadata
+        raw_texts = raw_texts or st.session_state.raw_texts
         expanded = expand_query(question)
-        
-        # Retrieve more candidates from both queries
-        docs_original = vector_store.similarity_search_with_score(
-            question,
-            k=RETRIEVAL_CANDIDATES
-        )
-        
-        docs_expanded = vector_store.similarity_search_with_score(
-            expanded,
-            k=RETRIEVAL_CANDIDATES
-        )
-        
-        # Combine and deduplicate
-        all_docs = {}
-        for doc, score in docs_original + docs_expanded:
-            doc_key = doc.page_content[:100]
-            if doc_key not in all_docs or score < all_docs[doc_key][1]:
-                all_docs[doc_key] = (doc, score)
-        
+
+        # Multi-query retrieval
+        all_docs = multi_query_retrieve(vector_store, question)
         docs_with_scores = list(all_docs.values())
-        
+
         if not docs_with_scores:
-            return {
-                "answer": "This information is not covered in the uploaded research papers.",
-                "confidence": 0.92,
-                "files_used": [],
-                "success": True
-            }
-        
-        # Rerank with ET-RAG scoring
+            return {"answer": "This information is not covered in the uploaded research papers.",
+                    "confidence": 0.92, "files_used": [], "success": True}
+
+        # ET-RAG reranking
         scored_docs = []
         for doc, cosine_dist in docs_with_scores:
             year_match = re.search(r'YEAR:\s*([^\n]+)', doc.page_content)
             study_match = re.search(r'STUDY_TYPE:\s*([^\n]+)', doc.page_content)
-            
             year = year_match.group(1).strip() if year_match else "Unknown"
             study_type = study_match.group(1).strip().lower() if study_match else "unknown"
-            
             cosine_sim = 1 / (1 + cosine_dist)
             evidence_weight = EVIDENCE_WEIGHTS.get(study_type, 0.5)
             temporal_weight = calculate_temporal_weight(year)
-            
             etrag_score = (
                 ETRAG_WEIGHTS['cosine'] * cosine_sim +
                 ETRAG_WEIGHTS['evidence'] * evidence_weight +
                 ETRAG_WEIGHTS['temporal'] * temporal_weight
             )
-            
             scored_docs.append({'doc': doc, 'score': etrag_score})
-        
-        # Take top K by ET-RAG score
+
         scored_docs.sort(key=lambda x: x['score'], reverse=True)
-        docs = [item['doc'] for item in scored_docs[:TOP_K_CHUNKS]]
+        top_chunks = [item['doc'] for item in scored_docs[:TOP_K_CHUNKS]]
         avg_score = np.mean([item['score'] for item in scored_docs[:TOP_K_CHUNKS]])
-        
+        chunk_context = "\n\n".join([doc.page_content for doc in top_chunks])
+
         # Extract files used
         files_used = []
-        for doc in docs:
+        for doc in top_chunks:
             match = re.search(r'SOURCE_FILE:\s*([^\n]+)', doc.page_content)
             if match:
                 files_used.append(match.group(1).strip())
-        
-        context = "\n\n".join([doc.page_content for doc in docs])
-        
-        prompt_template = """Answer based on high-quality, recent evidence.
 
-CONTEXT (ranked by evidence quality + recency + relevance):
-{context}
+        # Build condensed paper context (12K per paper — broader coverage)
+        paper_context = ""
+        for idx, (filename, metadata) in enumerate(paper_metadata.items(), 1):
+            paper_text = raw_texts.get(filename, "")
+            condensed = paper_text[:15000] if len(paper_text) > 15000 else paper_text
+            paper_context += f"\nPAPER {idx}: {metadata['title']} ({metadata['year']})\n{condensed}\n"
+
+        # Build question-type-specific instructions
+        if question_type == 'single_choice':
+            type_rule = "SINGLE CHOICE: Pick the ONE best answer. Start with the letter. Keep under 100 words."
+        elif question_type == 'multiple_choice':
+            type_rule = """MULTIPLE CHOICE — Multiple options can be correct.
+For EACH option (A, B, C, D), evaluate using BOTH sources:
+- Only mark SUPPORTED if there is CLEAR, DIRECT evidence in the papers
+- Indirect or implied evidence alone is NOT enough — the papers must specifically discuss the topic
+- Write: [Letter]: SUPPORTED (with brief evidence) or NOT SUPPORTED
+After evaluating ALL 4, write: ANSWER: [supported letters]"""
+        elif question_type == 'long_answer':
+            type_rule = "Answer in 200-250 words with comprehensive evidence from multiple papers."
+        else:
+            type_rule = "Answer in 100-150 words with citations."
+
+        prompt = f"""You are an expert medical research assistant with access to high-quality evidence. Answer using the evidence below.
+
+1. HIGH-RELEVANCE EXCERPTS (ranked by evidence quality + recency — prioritize these):
+{chunk_context}
+
+2. BROADER PAPER CONTEXT (supplementary — use to fill gaps only):
+{paper_context}
 
 QUESTION: {question}
+SEARCH TERMS: {expanded}
 
-INSTRUCTIONS:
-- Answer based on the context provided
-- If context discusses the topic but doesn't give exact answer, INFER from available information
-- Search for exact terms AND synonyms (e.g., "sleep disorder" includes insomnia, OSA, sleep apnea, sleep disturbances)
-- If the context mentions sleep problems in relation to AD, identify which specific type is most supported
-- Prioritize meta-analyses, systematic reviews, and RCTs
-- Cite sources from the papers
-- ONLY say "not covered" if there is ZERO mention of the topic
-- Do NOT cite external papers
+{type_rule}
+Prioritize the high-relevance excerpts. Use broader context only when excerpts don't cover a topic.
+Cite using paper title and year. Do NOT use external knowledge.
+Say "not covered" ONLY if topic is about a completely different field.
 
 Answer:
 """
 
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=TEMPERATURE, max_tokens=MAX_TOKENS)
-        prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-        chain = load_qa_chain(llm, chain_type="stuff", prompt=prompt)
-        
-        result = chain.invoke({"input_documents": docs, "question": question})
-        answer = result["output_text"].strip()
-        
-        # Calculate confidence
-        if "not covered" in answer.lower():
-            confidence = 0.92
-        else:
-            confidence = min(0.55 + (avg_score * 0.35), 0.90)
-        
-        return {
-            "answer": answer,
-            "confidence": confidence,
-            "files_used": list(set(files_used)),
-            "success": True
-        }
-        
+
+        for retry in range(3):
+            try:
+                response = llm.invoke(prompt)
+                answer = response.content.strip()
+
+                if "not covered" in answer.lower():
+                    confidence = 0.92
+                else:
+                    confidence = min(0.55 + (avg_score * 0.35), 0.90)
+
+                return {
+                    "answer": answer,
+                    "confidence": confidence,
+                    "files_used": list(set(files_used)),
+                    "success": True
+                }
+            except Exception as api_err:
+                if '429' in str(api_err) or 'Rate limit' in str(api_err):
+                    time.sleep((retry + 1) * 5)
+                else:
+                    raise api_err
+
+        return {"answer": "Error: Rate limit", "confidence": 0.0, "files_used": [], "success": False}
+
     except Exception as e:
-        return {
-            "answer": f"Error: {str(e)}",
-            "confidence": 0.0,
-            "files_used": [],
-            "success": False
-        }
+        return {"answer": f"Error: {str(e)}", "confidence": 0.0, "files_used": [], "success": False}
 
 
 # ============================================================================
@@ -694,7 +679,7 @@ def synthesize_answer(question, r1, r2, r3, question_type='short_answer'):
     """
     try:
         # Build agent summary
-        agent_texts = f"""AGENT 1 — Full Context (Gemini) [Confidence: {r1['confidence']:.0%}]:
+        agent_texts = f"""AGENT 1 — Full Context [Confidence: {r1['confidence']:.0%}]:
 {r1['answer']}
 
 AGENT 2 — Cosine RAG (GPT-4o-mini) [Confidence: {r2['confidence']:.0%}]:
@@ -703,60 +688,90 @@ AGENT 2 — Cosine RAG (GPT-4o-mini) [Confidence: {r2['confidence']:.0%}]:
 AGENT 3 — ET-RAG (GPT-4o-mini) [Confidence: {r3['confidence']:.0%}]:
 {r3['answer']}"""
 
-        # Tailor answer format by question type
-        if question_type == 'single_choice':
-            answer_format = "Start with: **Answer: [Letter]. [Option text]**\nThen give a 2-3 sentence explanation with paper citations."
-        elif question_type == 'multiple_choice':
-            answer_format = "Start with: **Answer: [Letters] — [Option texts]**\nThen explain why each selected option is correct with citations."
-        elif question_type == 'long_answer':
-            answer_format = "Write a comprehensive 3-5 paragraph answer that opens with a thesis, synthesizes key findings with citations, covers mechanisms/evidence/implications, and concludes with clinical significance."
-        else:
-            answer_format = "Write a clear 2-4 sentence answer that directly addresses the question with citations."
-
-        synthesis_prompt = f"""You are a medical research expert. Three AI agents independently analyzed research papers to answer a question.
-
-Your task has TWO parts. You MUST return BOTH parts.
+        # Use specialized prompt for multiple choice
+        if question_type == 'multiple_choice':
+            synthesis_prompt = f"""Three AI agents analyzed research papers to answer a MULTIPLE CHOICE question (select ALL correct answers).
 
 QUESTION: {question}
-QUESTION TYPE: {question_type}
 
 AGENT RESPONSES:
 {agent_texts}
 
-===== PART 1: EVALUATION (return as JSON) =====
+YOUR TASK: Evaluate EACH option independently by checking ALL agent responses for evidence.
 
-Evaluate each agent's response and determine consensus. Return this JSON block EXACTLY:
+Return this JSON, then the final answer:
+
+```json
+{{
+  "option_A": {{"supported": true/false, "evidence": "what agents said about this option"}},
+  "option_B": {{"supported": true/false, "evidence": "what agents said about this option"}},
+  "option_C": {{"supported": true/false, "evidence": "what agents said about this option"}},
+  "option_D": {{"supported": true/false, "evidence": "what agents said about this option"}},
+  "consensus": "STRONG/MAJORITY/SPLIT/NOT_COVERED",
+  "consensus_reason": "1 sentence"
+}}
+```
+
+RULES FOR EVALUATING EACH OPTION:
+- Check ALL 3 agent responses for ANY mention or evidence related to each option
+- If ANY agent provides evidence supporting an option → mark it as supported=true
+- An option can be supported even if only 1 agent mentions it — the evidence matters, not the count
+- Look for INDIRECT evidence too (e.g., "increased wakefulness" supports "insomnia"; "Aβ clearance during sleep" supports "metabolite clearance")
+- Do NOT require all agents to agree on an option — if one agent found real evidence from the papers, include it
+- If an agent had an error, ignore that agent
+
+After the JSON, write the final answer:
+- List ALL supported options: **Answer: A, B, C — [option texts]**
+- Brief explanation for each with citations as (Paper Title, Year)
+- Do NOT mention agents in the final answer
+- Keep response under 150 words."""
+
+        else:
+            # Single choice / short / long answer prompt
+            if question_type == 'single_choice':
+                answer_format = "**Answer: [Letter]. [Option text]**\nExplanation in 2-3 sentences with citations. Keep under 100 words."
+            elif question_type == 'long_answer':
+                answer_format = "3-4 paragraph answer: thesis → evidence with citations → mechanisms → clinical significance. Keep between 200-250 words total."
+            else:
+                answer_format = "2-4 sentence direct answer with citations. Keep between 100-150 words."
+
+            synthesis_prompt = f"""Three AI agents analyzed research papers to answer this question. Produce a single clean answer.
+
+QUESTION: {question}
+TYPE: {question_type}
+
+AGENT RESPONSES:
+{agent_texts}
+
+===== PART 1: JSON EVALUATION =====
 
 ```json
 {{
   "agent1_correct": true/false,
-  "agent1_note": "brief assessment",
+  "agent1_note": "1 sentence",
   "agent2_correct": true/false,
-  "agent2_note": "brief assessment",
+  "agent2_note": "1 sentence",
   "agent3_correct": true/false,
-  "agent3_note": "brief assessment",
+  "agent3_note": "1 sentence",
   "consensus": "STRONG/MAJORITY/SPLIT/NOT_COVERED",
-  "consensus_reason": "1 sentence explaining why"
+  "consensus_reason": "1 sentence"
 }}
 ```
 
-CONSENSUS RULES:
-- "STRONG": All responding agents cover the same key points / give the same answer (even if worded differently). For open-ended questions, if agents discuss the same mechanisms, findings, and conclusions = STRONG.
-- "MAJORITY": 2 out of 3 agree on the core answer, 1 differs significantly.
-- "SPLIT": Agents give contradictory or substantially different answers.
-- "NOT_COVERED": Most agents say the topic is not in the uploaded papers.
-- If an agent had an ERROR (429, timeout), ignore it — evaluate only the working agents.
-- For short/long answer questions: focus on whether agents cover the SAME KEY POINTS, not whether they use identical words. Similar content = agreement.
+Rules: STRONG = same answer/key points. MAJORITY = 2 agree. SPLIT = contradictory. NOT_COVERED = topic absent from papers. Ignore errored agents.
 
-===== PART 2: SYNTHESIZED ANSWER =====
+===== PART 2: FINAL ANSWER =====
 
-After the JSON block, write the final synthesized answer:
-- Combine the best evidence and citations from all correct agents
-- Do NOT mention "Agent 1/2/3" — just present the information naturally
-- Keep citations in format [Paper #, Page #]
-- {answer_format}"""
+{answer_format}
 
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, max_tokens=3000)
+CITATION RULES:
+- Cite as (Paper Title, Year) — e.g., (Alzheimer disease, 2021)
+- Do NOT use [Paper #, Page #] format — use actual paper names
+- Do NOT invent citations. Do NOT mention agents.
+- If NOT_COVERED: just say "This topic is not covered in the uploaded research papers."
+- Be concise. No repetition."""
+
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, max_tokens=3000)
         response = llm.invoke(synthesis_prompt)
         full_response = response.content.strip()
 
@@ -765,9 +780,12 @@ After the JSON block, write the final synthesized answer:
         consensus_reason = ""
         synthesized = full_response  # fallback: use entire response
 
+        # Find JSON block — handle nested objects for MCQ format
         json_match = re.search(r'```json\s*(\{.*?\})\s*```', full_response, re.DOTALL)
         if not json_match:
-            # Try without code blocks
+            # Try matching a larger JSON block (MCQ has nested objects)
+            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', full_response, re.DOTALL)
+        if not json_match:
             json_match = re.search(r'(\{[^{}]*"consensus"[^{}]*\})', full_response, re.DOTALL)
 
         if json_match:
@@ -779,13 +797,17 @@ After the JSON block, write the final synthesized answer:
                 # Extract the answer part (everything after the JSON block)
                 json_end = full_response.find(json_match.group(0)) + len(json_match.group(0))
                 answer_part = full_response[json_end:].strip()
-                # Remove any markdown headers like "## Synthesized Answer" etc.
+                # Remove any markdown headers
                 answer_part = re.sub(r'^#+\s*(PART 2|Synthesized Answer|Final Answer)[:\s]*\n*', '', answer_part, flags=re.IGNORECASE)
                 answer_part = re.sub(r'^\*\*?(PART 2|Synthesized Answer|Final Answer)\*?\*?[:\s]*\n*', '', answer_part, flags=re.IGNORECASE)
                 if answer_part and len(answer_part) > 30:
                     synthesized = answer_part.strip()
             except json.JSONDecodeError:
                 pass
+
+        # Force override for NOT_COVERED — never hallucinate an answer
+        if consensus_level == "NOT_COVERED":
+            synthesized = "This topic is not covered in the uploaded research papers. The question pertains to a subject outside the scope of the provided documents."
 
         # Build consensus message
         if consensus_level == "STRONG":
@@ -948,7 +970,7 @@ def build_single_response(r1, r2, r3, question="", question_type="short_answer")
 
 ### 🔍 Individual Agent Responses
 
-#### 🌐 Agent 1: Full Context (Gemini) — Confidence: {r1['confidence']:.0%}
+#### 🌐 Agent 1: Full Context — Confidence: {r1['confidence']:.0%}
 {r1['answer']}
 {('📄 Sources: ' + ', '.join(r1['files_used'][:3])) if r1['files_used'] else ''}
 
@@ -972,6 +994,12 @@ def process_batch_in_chat(questions):
     total = len(questions)
     all_results = []
 
+    # Extract session state data BEFORE threading (thread-safe)
+    paper_metadata = dict(st.session_state.paper_metadata)
+    raw_texts = dict(st.session_state.raw_texts)
+    vs_cosine = st.session_state.vector_store_cosine
+    vs_etrag = st.session_state.vector_store_etrag
+
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -982,9 +1010,14 @@ def process_batch_in_chat(questions):
 
         start_time = time.time()
 
-        r1 = agent_full_context(question)
-        r2 = agent_cosine_rag(question)
-        r3 = agent_etrag(question)
+        # Run all 3 agents IN PARALLEL with pre-extracted data
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f1 = executor.submit(agent_full_context, question, paper_metadata, raw_texts, q_type)
+            f2 = executor.submit(agent_cosine_rag, question, vs_cosine, q_type)
+            f3 = executor.submit(agent_etrag, question, vs_etrag, q_type, paper_metadata, raw_texts)
+            r1 = f1.result()
+            r2 = f2.result()
+            r3 = f3.result()
 
         # GPT synthesis
         synthesis = synthesize_answer(question, r1, r2, r3, question_type=q_type)
@@ -1050,7 +1083,7 @@ def process_batch_in_chat(questions):
         response += f"""### Q{row['question_id']} [{q_label}]
 **{row['question_text']}**
 
-#### 🌐 Agent 1: Full Context (Gemini) — Confidence: {row['agent1_confidence']:.0%}
+#### 🌐 Agent 1: Full Context — Confidence: {row['agent1_confidence']:.0%}
 {row['agent1_full_context']}
 
 #### 🔍 Agent 2: Cosine RAG — Confidence: {row['agent2_confidence']:.0%}
@@ -1152,7 +1185,7 @@ def main():
         
         st.markdown("---")
         st.markdown("**About**")
-        st.caption("Three AI agents analyze your papers: Full Context (Gemini), Cosine RAG (GPT-4o), and ET-RAG (Evidence+Temporal)")
+        st.caption("Three AI agents analyze your papers: Full Context, Cosine RAG, and ET-RAG (Evidence+Temporal Hybrid)")
     
     # Main content area
     if not st.session_state.papers_processed:
@@ -1190,25 +1223,70 @@ def main():
                 q_text = q_item['text'] if isinstance(q_item, dict) else q_item
                 q_type = q_item.get('type', classify_question_type(q_text)) if isinstance(q_item, dict) else classify_question_type(q_text)
 
-                with st.spinner("🤖 All 3 agents analyzing..."):
-                    r1 = agent_full_context(q_text)
-                    r2 = agent_cosine_rag(q_text)
-                    r3 = agent_etrag(q_text)
+                # Extract session state data before threading
+                _pm = dict(st.session_state.paper_metadata)
+                _rt = dict(st.session_state.raw_texts)
+                _vsc = st.session_state.vector_store_cosine
+                _vse = st.session_state.vector_store_etrag
+
+                with st.spinner("🤖 All 3 agents analyzing in parallel..."):
+                    with ThreadPoolExecutor(max_workers=3) as executor:
+                        f1 = executor.submit(agent_full_context, q_text, _pm, _rt, q_type)
+                        f2 = executor.submit(agent_cosine_rag, q_text, _vsc, q_type)
+                        f3 = executor.submit(agent_etrag, q_text, _vse, q_type, _pm, _rt)
+                        r1 = f1.result()
+                        r2 = f2.result()
+                        r3 = f3.result()
                     response, _ = build_single_response(r1, r2, r3, question=q_text, question_type=q_type)
                     st.session_state.chat_history.append(("assistant", response))
 
                 st.rerun()
 
             else:
-                # --- Batch mode: multiple questions detected ---
-                st.session_state.chat_history.append(("user", user_input))
-                st.info(f"📋 Detected **{len(questions)}** questions. Processing with all 3 agents + synthesis...")
+                # --- Batch mode: store questions, process one at a time with rerun ---
+                if "batch_questions" not in st.session_state:
+                    # First time — save questions and start processing
+                    st.session_state.batch_questions = questions
+                    st.session_state.batch_index = 0
+                    st.session_state.chat_history.append(("user", user_input))
+                    st.session_state.chat_history.append(("assistant", f"📋 Processing **{len(questions)}** questions. Results will appear one at a time..."))
+                    st.rerun()
 
-                response, results_df = process_batch_in_chat(questions)
-                # Store with results_df attached for download button
-                st.session_state.chat_history.append(("assistant", response, results_df))
+        # Process batch questions one at a time (outside the chat_input block)
+        if "batch_questions" in st.session_state and st.session_state.batch_index < len(st.session_state.batch_questions):
+            _pm = dict(st.session_state.paper_metadata)
+            _rt = dict(st.session_state.raw_texts)
+            _vsc = st.session_state.vector_store_cosine
+            _vse = st.session_state.vector_store_etrag
 
-                st.rerun()
+            i = st.session_state.batch_index
+            total = len(st.session_state.batch_questions)
+            q_item = st.session_state.batch_questions[i]
+            q_text = q_item['text'] if isinstance(q_item, dict) else q_item
+            q_type = q_item.get('type', classify_question_type(q_text)) if isinstance(q_item, dict) else classify_question_type(q_text)
+
+            with st.spinner(f"🤖 Processing Q{i+1}/{total}: {q_text[:60]}..."):
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    f1 = executor.submit(agent_full_context, q_text, _pm, _rt, q_type)
+                    f2 = executor.submit(agent_cosine_rag, q_text, _vsc, q_type)
+                    f3 = executor.submit(agent_etrag, q_text, _vse, q_type, _pm, _rt)
+                    r1 = f1.result()
+                    r2 = f2.result()
+                    r3 = f3.result()
+
+                response, _ = build_single_response(r1, r2, r3, question=q_text, question_type=q_type)
+                response = f"### Q{i+1}/{total} [{q_type.replace('_',' ').title()}]\n**{q_text}**\n\n{response}"
+                st.session_state.chat_history.append(("assistant", response))
+
+            st.session_state.batch_index += 1
+
+            if st.session_state.batch_index >= total:
+                # Batch complete — clean up
+                st.session_state.chat_history.append(("assistant", f"✅ All **{total}** questions processed!"))
+                del st.session_state.batch_questions
+                del st.session_state.batch_index
+
+            st.rerun()
 
 
 if __name__ == "__main__":
