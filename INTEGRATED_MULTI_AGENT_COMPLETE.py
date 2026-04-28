@@ -25,7 +25,6 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from langchain_core.prompts import PromptTemplate
-import google.generativeai as genai
 from dotenv import load_dotenv
 import re
 import io
@@ -79,7 +78,6 @@ load_dotenv()
 try:
     from openai import OpenAI
     openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 except Exception as e:
     st.error(f"⚠️ API Configuration Error: {e}")
 
@@ -145,9 +143,9 @@ def expand_query(question):
 # ============================================================================
 
 def extract_metadata(pdf_file):
-    """Extract metadata from PDF using Gemini"""
+    """Extract metadata from PDF using GPT-4o-mini"""
     filename = pdf_file.name
-    
+
     metadata = {
         "filename": filename,
         "title": filename.replace('.pdf', ''),
@@ -156,19 +154,32 @@ def extract_metadata(pdf_file):
         "pages": 0,
         "study_type": "unknown"
     }
-    
+
     try:
         file_bytes = pdf_file.getvalue()
         pdf_reader = PdfReader(io.BytesIO(file_bytes))
         metadata["pages"] = len(pdf_reader.pages)
-        
-        # Extract first 3 pages for metadata
-        first_pages = ""
-        for i in range(min(3, len(pdf_reader.pages))):
-            first_pages += pdf_reader.pages[i].extract_text() or ""
-        
-        # Use Gemini to extract metadata
-        prompt = f"""Extract metadata from this research paper. Return ONLY valid JSON:
+
+        # Extract full text FIRST (no API needed)
+        full_text = ""
+        for i, page in enumerate(pdf_reader.pages):
+            page_text = page.extract_text() or ""
+            full_text += f"[Page {i+1}]: {page_text}\n\n"
+
+        st.session_state.raw_texts[filename] = full_text
+
+        # Extract year from filename as fallback
+        year_match = re.search(r'(20\d{2})', filename)
+        if year_match:
+            metadata["year"] = year_match.group(1)
+
+        # Use GPT-4o-mini for metadata extraction
+        try:
+            first_pages = ""
+            for i in range(min(3, len(pdf_reader.pages))):
+                first_pages += pdf_reader.pages[i].extract_text() or ""
+
+            prompt = f"""Extract metadata from this research paper. Return ONLY valid JSON:
 {{
     "title": "Paper title",
     "authors": ["Author 1", "Author 2"],
@@ -177,31 +188,22 @@ def extract_metadata(pdf_file):
 }}
 
 Text:
-{first_pages[:8000]}"""
+{first_pages[:6000]}"""
 
-        genai_model = genai.GenerativeModel("gemini-2.0-flash")
-        response = genai_model.generate_content(prompt)
-        
-        if response and hasattr(response, 'text'):
-            response_text = response.text.strip()
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, max_tokens=300)
+            response = llm.invoke(prompt)
+            response_text = response.content.strip()
             response_text = response_text.replace("```json", "").replace("```", "").strip()
-            
             try:
                 extracted = json.loads(response_text)
                 metadata.update({k: v for k, v in extracted.items() if v})
             except:
                 pass
-        
-        # Extract full text
-        full_text = ""
-        for i, page in enumerate(pdf_reader.pages):
-            page_text = page.extract_text() or ""
-            full_text += f"[Page {i+1}]: {page_text}\n\n"
-        
-        st.session_state.raw_texts[filename] = full_text
-        
+        except Exception:
+            pass  # API failed — metadata uses filename defaults, but text is already saved
+
         return metadata
-        
+
     except Exception as e:
         st.error(f"Error processing {filename}: {str(e)}")
         return metadata
@@ -216,7 +218,9 @@ def create_chunks(all_papers_metadata):
     all_chunks = []
     
     for filename, metadata in all_papers_metadata.items():
-        paper_text = st.session_state.raw_texts[filename]
+        paper_text = st.session_state.raw_texts.get(filename, "")
+        if not paper_text:
+            continue
         
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
@@ -1183,9 +1187,6 @@ def main():
                 st.session_state.chat_history = []
                 st.rerun()
         
-        st.markdown("---")
-        st.markdown("**About**")
-        st.caption("Three AI agents analyze your papers: Full Context, Cosine RAG, and ET-RAG (Evidence+Temporal Hybrid)")
     
     # Main content area
     if not st.session_state.papers_processed:
