@@ -1,0 +1,22 @@
+﻿question_index	correct_answer	etrag_answer	confidence	execution_time_sec
+1	B. Amyloid-beta (Aβ)	B. Amyloid-beta (Aβ) is considered a hallmark of Alzheimer’s disease (AD) pathology, characterized by the presence of β-amyloid-containing plaques and tau-containing neurofibrillary tangles (Alzheimer disease, 2021).	0.7537	9.32
+2	C. Obstructive sleep apnea (OSA)	C. Obstructive sleep apnea (OSA) is commonly associated with increased AD risk. Sleep disturbances, including OSA, are linked to cognitive decline and neurodegeneration in Alzheimer disease (AD) patients, as they contribute to fragmented sleep and impaired cognitive function (Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease, 2024).	0.7354	4.01
+3	C. Aβ-PET	"C. Aβ-PET
+
+The introduction of Aβ-PET imaging in 2004 clarified the roles of FDG-PET and MRI in evaluating patients with cognitive impairment, specifically for visualizing brain amyloid in Alzheimer disease (AD) (Alzheimer disease, 2021)."	0.753	5.54
+4	A. Probiotics	"A. Probiotics
+
+Probiotics, specifically Bifidobacterium and Lactobacillus species, have shown potential in improving blood-brain barrier integrity and memory deficits in mouse models of Alzheimer's disease (AD) after antibiotic-induced microbiome depletion (Neuroinflammation in Alzheimer disease, 2024)."	0.7421	8.59
+5	Not Covered	Not covered.	0.92	3.45
+6	B. T	"B. T  
+The A-T-N biomarker framework includes tau as the letter T, representing abnormal tau protein. This framework classifies individuals in the Alzheimer's disease spectrum by combining amyloid (A), tau (T), and neurodegeneration (N) biomarkers (Alzheimer disease, 2021)."	0.7464	8.08
+7	D. >90 years	"C. 65–90 years
+
+The prevalence of hearing loss increases significantly with age, and individuals aged 65 years and older are particularly at risk for cognitive decline and dementia, including Alzheimer's disease (AD). This age group experiences a higher incidence of cognitive impairment, which is exacerbated by factors such as hearing loss (Alzheimer disease, 2021)."	0.7411	7.1
+8	B. NREM sleep	"B. NREM sleep
+
+NREM sleep is critical for metabolite clearance from the brain, particularly during the glymphatic system's activity, which is enhanced during this sleep stage. This process is essential for the clearance of amyloid-beta (Aβ) and other waste products from the central nervous system (Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease, 2024)."	0.7353	4.38
+9	B. Decreased hippocampal volume	"B. Decreased hippocampal volume. 
+
+Hearing loss in Alzheimer's disease patients is associated with decreased hippocampal volume, which reflects the broader neurodegenerative changes occurring in the brain. This atrophy is linked to cognitive decline and is a common feature in Alzheimer's pathology (Alzheimer disease, 2021)."	0.7405	3.3
+10	B. A preventive dietary strategy	B. A preventive dietary strategy. The Mediterranean diet has been linked to a reduced risk of Alzheimer's disease (AD) and is considered a preventive approach to maintain good health and cognitive function (Oxidative damage in neurodegeneration: roles in the pathogenesis and progression of Alzheimer disease, 2023).	0.7357	4.07

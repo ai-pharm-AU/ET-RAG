@@ -1,0 +1,5 @@
+﻿agent_family	configuration	retrieval_score	enabled_components	hybrid_paper_context	per_option_retrieval	quality_check	purpose
+ET-RAG	A0: Cosine baseline	1.0 Sim	cosine retrieval	False	False	False	Reference baseline
+ET-RAG	A1: + Evidence quality	0.7 Sim + 0.3 Evidence	cosine retrieval + evidence quality	False	False	False	Test evidence-quality weighting
+ET-RAG	A2: + Temporal recency	0.5 Sim + 0.3 Evidence + 0.2 Time	cosine retrieval + evidence quality + temporal recency	False	False	False	Test added temporal information
+ET-RAG	A3: + Hybrid context	0.5 Sim + 0.3 Evidence + 0.2 Time	cosine retrieval + evidence quality + temporal recency + hybrid paper context	True	False	False	Test paper-level contextual augmentation

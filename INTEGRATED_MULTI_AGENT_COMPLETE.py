@@ -4,9 +4,9 @@ MULTI-AGENT ALZHEIMER'S RESEARCH CHATBOT
 Production-Ready Version
 
 Three AI Agents Answer Your Research Questions:
-- Full Context Agent (GPT-4o-mini) - Analyzes condensed corpus (10K/paper)
+- Paper Prefix Agent (GPT-4o-mini) - Reads the first 8,000 extracted characters of each paper
 - Cosine RAG Agent (GPT-4o-mini) - Multi-query semantic retrieval
-- ET-RAG Agent (GPT-4o-mini) - Hybrid: Evidence-weighted retrieval + paper context
+- ET-RAG Agent (GPT-4o-mini) - Hybrid: Evidence-weighted retrieval + paper prefixes
 
 Features:
 - Upload your own research papers
@@ -23,7 +23,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 import os
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains.question_answering import load_qa_chain
+from langchain_classic.chains.question_answering import load_qa_chain
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 import re
@@ -47,6 +47,11 @@ RETRIEVAL_CANDIDATES = 40  # Retrieve more, then rerank
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 400
 CURRENT_YEAR = 2025
+
+# Positional context limits. These slices are leading excerpts of the extracted
+# PDF text; they are not generated summaries and do not represent later sections.
+PAPER_PREFIX_CHAR_LIMIT = 8_000
+ETRAG_PREFIX_CHAR_LIMIT = 8_000
 
 # Evidence quality hierarchy (for ET-RAG)
 EVIDENCE_WEIGHTS = {
@@ -208,6 +213,32 @@ Text:
         st.error(f"Error processing {filename}: {str(e)}")
         return metadata
 
+def extract_abstract(full_text):
+    """Extract the Abstract section from PDF text."""
+
+    # Remove the page markers added during extraction.
+    cleaned_text = re.sub(
+        r"\[Page \d+\]:",
+        " ",
+        full_text,
+        flags=re.IGNORECASE,
+    )
+
+    # Join words broken across PDF lines, such as "low-\narousal".
+    cleaned_text = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", cleaned_text)
+
+    # Capture everything after Abstract and before the next section.
+    match = re.search(
+        r"\bAbstract\b\s*(.*?)"
+        r"(?=\b(?:Keywords?|Sections?|Introduction|Background)\b)",
+        cleaned_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    if not match:
+        return "Abstract not found."
+
+    return re.sub(r"\s+", " ", match.group(1)).strip()
 
 # ============================================================================
 # CHUNKING
@@ -301,11 +332,16 @@ def create_vector_stores(chunks):
 
 
 # ============================================================================
-# AGENT 1: FULL CONTEXT (GEMINI)
+# AGENT 1: PAPER PREFIX
 # ============================================================================
 
-def agent_full_context(question, paper_metadata=None, raw_texts=None, question_type='short_answer'):
-    """Full Context agent using GPT-4o-mini — sees condensed content from ALL papers."""
+def agent_paper_prefix(question, paper_metadata=None, raw_texts=None, question_type='short_answer'):
+    """Answer from the leading extracted-text prefix of every uploaded paper.
+
+    This agent receives at most ``PAPER_PREFIX_CHAR_LIMIT`` characters from the
+    start of each paper. The prefixes are not summaries: no content is selected
+    from later sections, so evidence beyond each prefix is unavailable here.
+    """
 
     try:
         paper_metadata = paper_metadata or st.session_state.paper_metadata
@@ -313,15 +349,26 @@ def agent_full_context(question, paper_metadata=None, raw_texts=None, question_t
 
         expanded = expand_query(question)
 
-        # Build condensed full context — 10K chars per paper
+        # Preserve the fixed-prefix baseline exactly: take characters from the
+        # beginning only. Do not call this a summary or imply full-paper access.
         all_text = ""
         references = []
         for idx, (filename, metadata) in enumerate(paper_metadata.items(), 1):
             paper_text = raw_texts.get(filename, "")
             ref = f"[{idx}] {metadata.get('title', filename)} ({metadata.get('year', 'Unknown')})"
             references.append(ref)
-            condensed = paper_text[:8000] if len(paper_text) > 8000 else paper_text
-            all_text += f"\nPAPER {idx}: {metadata['title']} ({metadata['year']})\n{condensed}\n\n"
+            #paper_prefix = paper_text[:PAPER_PREFIX_CHAR_LIMIT]
+            paper_prefix = extract_abstract(paper_text) # [26/08/24 update] modified to be the abstract content
+            scope = (
+                f"first {len(paper_prefix):,} of {len(paper_text):,} extracted characters"
+                if len(paper_text) > PAPER_PREFIX_CHAR_LIMIT
+                else f"all {len(paper_prefix):,} extracted characters"
+            )
+            all_text += (
+                f"\nPAPER {idx} EXTRACTED-TEXT PREFIX: "
+                f"{metadata['title']} ({metadata['year']})\n"
+                f"AVAILABLE SCOPE: {scope}\n{paper_prefix}\n\n"
+            )
 
         # Build question-type-specific instructions
         if question_type == 'multiple_choice':
@@ -333,15 +380,20 @@ def agent_full_context(question, paper_metadata=None, raw_texts=None, question_t
         else:
             type_instruction = "Answer in 100-150 words."
 
-        prompt = f"""Answer using ONLY the papers below.
+        prompt = f"""Answer using ONLY the extracted-text prefixes below.
+
+CONTEXT LIMITATION:
+- Each block contains up to the first {PAPER_PREFIX_CHAR_LIMIT:,} characters of a paper's extracted text.
+- These leading prefixes are not summaries and may omit Methods, Results, Discussion, or other later content.
+- Do not infer what omitted portions contain or claim that a topic is absent from the full papers.
+- If the evidence needed to answer is unavailable, say: "The answer was not found in the provided paper prefixes."
 
 QUESTION: {question}
 
 {type_instruction}
 Cite using paper title and year. Do NOT use external knowledge.
-Say "not covered" ONLY if topic is about a completely different field.
 
-PAPERS CONTENT:
+PAPER PREFIXES:
 {all_text}
 """
 
@@ -464,7 +516,9 @@ def agent_cosine_rag(question, vector_store=None, question_type='short_answer'):
         
         # Build question-type-specific instructions
         if question_type == 'multiple_choice':
-            type_rule = "MULTIPLE CHOICE: Evaluate EACH option (A, B, C, D) INDEPENDENTLY. For each, ask: is there evidence in the context? Select ALL supported options, not just the best one. Format: list all correct letters, then brief explanation for each. Keep response under 150 words."
+            type_rule = """MULTIPLE CHOICE: Evaluate EACH option (A, B, C, D) INDEPENDENTLY. 
+            For each, ask: is there evidence in the context? Select ALL supported options, not just the best one. 
+            Format: list all correct letters, then brief explanation for each. Keep response under 150 words."""
         elif question_type == 'single_choice':
             type_rule = "SINGLE CHOICE: Pick the ONE best answer supported by the context. Keep response under 100 words."
         elif question_type == 'long_answer':
@@ -548,7 +602,7 @@ def calculate_temporal_weight(year):
 
 
 def agent_etrag(question, vector_store=None, question_type='short_answer', paper_metadata=None, raw_texts=None):
-    """ET-RAG: Hybrid agent — retrieved chunks (reranked by evidence + recency) + condensed paper context."""
+    """ET-RAG: reranked chunks plus leading extracted-text paper prefixes."""
 
     try:
         if vector_store is None:
@@ -598,12 +652,17 @@ def agent_etrag(question, vector_store=None, question_type='short_answer', paper
             if match:
                 files_used.append(match.group(1).strip())
 
-        # Build condensed paper context (12K per paper — broader coverage)
+        # Supplement retrieval with a leading excerpt from each paper. This is a
+        # positional prefix, not a summary or a representation of the full paper.
         paper_context = ""
         for idx, (filename, metadata) in enumerate(paper_metadata.items(), 1):
             paper_text = raw_texts.get(filename, "")
-            condensed = paper_text[:15000] if len(paper_text) > 15000 else paper_text
-            paper_context += f"\nPAPER {idx}: {metadata['title']} ({metadata['year']})\n{condensed}\n"
+            #paper_prefix = paper_text[:ETRAG_PREFIX_CHAR_LIMIT]
+            paper_prefix = extract_abstract(paper_text) # [26/08/24 update] modified to be the abstract content
+            paper_context += (
+                f"\nPAPER {idx} EXTRACTED-TEXT PREFIX: "
+                f"{metadata['title']} ({metadata['year']})\n{paper_prefix}\n"
+            )
 
         # Build question-type-specific instructions
         if question_type == 'single_choice':
@@ -625,14 +684,14 @@ After evaluating ALL 4, write: ANSWER: [supported letters]"""
 1. HIGH-RELEVANCE EXCERPTS (ranked by evidence quality + recency — prioritize these):
 {chunk_context}
 
-2. BROADER PAPER CONTEXT (supplementary — use to fill gaps only):
+2. LEADING PAPER PREFIXES (supplementary — not summaries or full-paper context):
 {paper_context}
 
 QUESTION: {question}
 SEARCH TERMS: {expanded}
 
 {type_rule}
-Prioritize the high-relevance excerpts. Use broader context only when excerpts don't cover a topic.
+Prioritize the high-relevance excerpts. Use the leading prefixes only when the excerpts do not cover a topic.
 Cite using paper title and year. Do NOT use external knowledge.
 Say "not covered" ONLY if topic is about a completely different field.
 
@@ -683,14 +742,16 @@ def synthesize_answer(question, r1, r2, r3, question_type='short_answer'):
     """
     try:
         # Build agent summary
-        agent_texts = f"""AGENT 1 — Full Context [Confidence: {r1['confidence']:.0%}]:
+        agent_texts = f"""AGENT 1 — Paper Prefix [Confidence: {r1['confidence']:.0%}]:
 {r1['answer']}
 
 AGENT 2 — Cosine RAG (GPT-4o-mini) [Confidence: {r2['confidence']:.0%}]:
 {r2['answer']}
 
 AGENT 3 — ET-RAG (GPT-4o-mini) [Confidence: {r3['confidence']:.0%}]:
-{r3['answer']}"""
+{r3['answer']}
+
+SOURCE-SCOPE NOTE: Agent 1 received only the first {PAPER_PREFIX_CHAR_LIMIT:,} extracted characters of each paper. Its context was a set of leading prefixes, not summaries or full papers; therefore, an Agent 1 "not found" result applies only to those prefixes."""
 
         # Use specialized prompt for multiple choice
         if question_type == 'multiple_choice':
@@ -974,7 +1035,7 @@ def build_single_response(r1, r2, r3, question="", question_type="short_answer")
 
 ### 🔍 Individual Agent Responses
 
-#### 🌐 Agent 1: Full Context — Confidence: {r1['confidence']:.0%}
+#### 🌐 Agent 1: Paper Prefix (first {PAPER_PREFIX_CHAR_LIMIT:,} characters) — Confidence: {r1['confidence']:.0%}
 {r1['answer']}
 {('📄 Sources: ' + ', '.join(r1['files_used'][:3])) if r1['files_used'] else ''}
 
@@ -1016,7 +1077,7 @@ def process_batch_in_chat(questions):
 
         # Run all 3 agents IN PARALLEL with pre-extracted data
         with ThreadPoolExecutor(max_workers=3) as executor:
-            f1 = executor.submit(agent_full_context, question, paper_metadata, raw_texts, q_type)
+            f1 = executor.submit(agent_paper_prefix, question, paper_metadata, raw_texts, q_type)
             f2 = executor.submit(agent_cosine_rag, question, vs_cosine, q_type)
             f3 = executor.submit(agent_etrag, question, vs_etrag, q_type, paper_metadata, raw_texts)
             r1 = f1.result()
@@ -1036,7 +1097,7 @@ def process_batch_in_chat(questions):
             'consensus_level': synthesis['consensus'],
             'consensus_message': synthesis['message'],
             'avg_confidence': round(synthesis['confidence'], 2),
-            'agent1_full_context': r1['answer'],
+            'agent1_paper_prefix': r1['answer'],
             'agent1_confidence': r1['confidence'],
             'agent1_files_used': ', '.join(r1['files_used']),
             'agent2_cosine_rag': r2['answer'],
@@ -1087,8 +1148,8 @@ def process_batch_in_chat(questions):
         response += f"""### Q{row['question_id']} [{q_label}]
 **{row['question_text']}**
 
-#### 🌐 Agent 1: Full Context — Confidence: {row['agent1_confidence']:.0%}
-{row['agent1_full_context']}
+#### 🌐 Agent 1: Paper Prefix (first {PAPER_PREFIX_CHAR_LIMIT:,} characters) — Confidence: {row['agent1_confidence']:.0%}
+{row['agent1_paper_prefix']}
 
 #### 🔍 Agent 2: Cosine RAG — Confidence: {row['agent2_confidence']:.0%}
 {row['agent2_cosine_rag']}
@@ -1232,7 +1293,7 @@ def main():
 
                 with st.spinner("🤖 All 3 agents analyzing in parallel..."):
                     with ThreadPoolExecutor(max_workers=3) as executor:
-                        f1 = executor.submit(agent_full_context, q_text, _pm, _rt, q_type)
+                        f1 = executor.submit(agent_paper_prefix, q_text, _pm, _rt, q_type)
                         f2 = executor.submit(agent_cosine_rag, q_text, _vsc, q_type)
                         f3 = executor.submit(agent_etrag, q_text, _vse, q_type, _pm, _rt)
                         r1 = f1.result()
@@ -1268,7 +1329,7 @@ def main():
 
             with st.spinner(f"🤖 Processing Q{i+1}/{total}: {q_text[:60]}..."):
                 with ThreadPoolExecutor(max_workers=3) as executor:
-                    f1 = executor.submit(agent_full_context, q_text, _pm, _rt, q_type)
+                    f1 = executor.submit(agent_paper_prefix, q_text, _pm, _rt, q_type)
                     f2 = executor.submit(agent_cosine_rag, q_text, _vsc, q_type)
                     f3 = executor.submit(agent_etrag, q_text, _vse, q_type, _pm, _rt)
                     r1 = f1.result()

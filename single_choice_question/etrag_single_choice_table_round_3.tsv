@@ -1,0 +1,25 @@
+﻿question_index	correct_answer	etrag_answer	confidence	execution_time_sec
+1	B. Amyloid-beta (Aβ)	B. Amyloid-beta (Aβ) is considered a hallmark of Alzheimer’s disease (AD) pathology, characterized by the presence of β-amyloid-containing plaques and tau-containing neurofibrillary tangles (Alzheimer disease, 2021).	0.7537	4.35
+2	C. Obstructive sleep apnea (OSA)	"C. Obstructive sleep apnea (OSA) 
+
+Sleep disturbances, including obstructive sleep apnea, are commonly observed in individuals with Alzheimer's disease (AD) and are associated with increased risk factors for the disease. Fragmented sleep patterns and reduced sleep quality can exacerbate cognitive decline in AD patients (Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease, 2024)."	0.7354	3.6
+3	C. Aβ-PET	"C. Aβ-PET
+
+The introduction of Aβ-PET imaging in 2004 clarified the roles of FDG-PET and MRI in evaluating patients with cognitive impairment, specifically for visualizing brain amyloid in Alzheimer disease (AD) (Alzheimer disease, 2021)."	0.753	3.05
+4	A. Probiotics	"A. Probiotics
+
+Probiotics, specifically Bifidobacterium and Lactobacillus species, have shown potential in improving blood-brain barrier integrity and memory deficits in mouse models of Alzheimer's disease (AD) after antibiotic-induced microbiome depletion (Neuroinflammation in Alzheimer disease, 2024). This suggests that gut-related interventions may play a role in AD treatment by modulating the microbiome and its effects on neuroinflammation and cognitive function."	0.7421	3.81
+5	Not Covered	Not covered.	0.92	2.62
+6	B. T	"B. T
+
+The A-T-N biomarker framework includes tau as the letter ""T,"" representing abnormal tau protein. This framework classifies individuals in the Alzheimer's disease spectrum by combining amyloid (A), tau (T), and neurodegeneration (N) biomarkers (Alzheimer disease, 2021)."	0.7464	2.96
+7	D. >90 years	"C. 65–90 years
+
+The prevalence of overt cognitive impairment increases exponentially with advancing age, particularly after 65 years, with the incidence of all-cause dementia rising steeply in this age group (Alzheimer disease, 2021). Additionally, the fastest-growing demographic segment at risk for cognitive disorders is the oldest-old group (people aged > 90 years), which has the highest risk of multi-aetiology dementia (Alzheimer disease, 2021)."	0.748	4.06
+8	B. NREM sleep	"B. NREM sleep
+
+NREM sleep, particularly during slow-wave sleep, is critical for metabolite clearance from the brain, including the clearance of amyloid-beta (Aβ). This process is facilitated by the glymphatic system, which is more active during sleep (Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease, 2024)."	0.7353	4.11
+9	B. Decreased hippocampal volume	"B. Decreased hippocampal volume. 
+
+Hearing loss in Alzheimer's disease patients is associated with decreased hippocampal volume, which reflects the broader neurodegenerative changes occurring in the brain. This relationship highlights the impact of auditory dysfunction on cognitive decline and hippocampal atrophy in AD patients (Alzheimer disease, 2021)."	0.7405	4.32
+10	B. A preventive dietary strategy	B. A preventive dietary strategy. The Mediterranean diet has been linked to a reduced risk of Alzheimer's disease (AD) and is considered a preventive approach to maintain good health and potentially optimize cognitive function (Oxidative damage in neurodegeneration: roles in the pathogenesis and progression of Alzheimer disease, 2023).	0.7357	3.27

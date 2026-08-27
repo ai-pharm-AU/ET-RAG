@@ -1,0 +1,18 @@
+﻿round_number,config_order,agent_family,invocation_source,config_id,configuration,enabled_components,similarity_weight,evidence_weight,temporal_weight,question_number,question,options,correct_answer_keys,correct_answer_texts,predicted_answer_keys,is_correct,confidence,execution_time_sec,base_retrieval_time_sec,option_retrieval_time_sec,candidate_count,top_chunk_count,mean_top_retrieval_score,hybrid_context,per_option_retrieval,quality_check,quality_changed,source_files,draft_answer,final_answer
+1,0,ET-RAG,test.agent_etrag,A0,Cosine baseline,cosine retrieval,1.0,0.0,0.0,1,Which of the following are components of the A-T-N AD biomarker framework?,A. Amyloid beta | B. Tau | C. Neurodegeneration markers | D. Synaptic vesicle proteins,"A, B, C",Amyloid beta | Tau | Neurodegeneration markers,"A, B, C",True,0.737763,8.454,4.16,0.0,27,20,0.536465,False,False,False,False,2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf | 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf | 2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf | 2024 Neuroinflammation in Alzheimer disease.pdf | Recent advances in Alzheimer’s disease mechanisms clinical trials and new drug development strategies.pdf | alzheimer disease  2021.pdf,"A: SUPPORTED (The A-T-N framework includes amyloid beta as a key component, specifically mentioned as ""Aβ"" in the context of biomarkers for Alzheimer's disease in the review ""Alzheimer disease"" from 2021.)
+
+B: SUPPORTED (Tau is explicitly identified as a component of the A-T-N framework, referred to as ""T"" for tau pathology in the same review ""Alzheimer disease"" from 2021.)
+
+C: SUPPORTED (Neurodegeneration markers are included in the A-T-N framework, categorized as ""N"" for neurodegeneration in the review ""Alzheimer disease"" from 2021.)
+
+D: NOT SUPPORTED (Synaptic vesicle proteins are not mentioned as part of the A-T-N framework in the provided excerpts; the focus is on amyloid, tau, and neurodegeneration markers.)
+
+ANSWER: ABC","A: SUPPORTED (The A-T-N framework includes amyloid beta as a key component, specifically mentioned as ""Aβ"" in the context of biomarkers for Alzheimer's disease in the review ""Alzheimer disease"" from 2021.)
+
+B: SUPPORTED (Tau is explicitly identified as a component of the A-T-N framework, referred to as ""T"" for tau pathology in the same review ""Alzheimer disease"" from 2021.)
+
+C: SUPPORTED (Neurodegeneration markers are included in the A-T-N framework, categorized as ""N"" for neurodegeneration in the review ""Alzheimer disease"" from 2021.)
+
+D: NOT SUPPORTED (Synaptic vesicle proteins are not mentioned as part of the A-T-N framework in the provided excerpts; the focus is on amyloid, tau, and neurodegeneration markers.)
+
+ANSWER: ABC"

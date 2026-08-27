@@ -13,6 +13,7 @@ langchain-google-genai
 
 # LangChain - All required packages
 langchain
+langchain-classic
 langchain-core
 langchain-community
 langchain-text-splitters

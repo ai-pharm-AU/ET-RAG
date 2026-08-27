@@ -1,0 +1,108 @@
+﻿round_number	config_order	agent_family	invocation_source	config_id	configuration	enabled_components	similarity_weight	evidence_weight	temporal_weight	question_number	question	options	correct_answer_keys	correct_answer_texts	predicted_answer_keys	is_correct	confidence	execution_time_sec	base_retrieval_time_sec	option_retrieval_time_sec	candidate_count	top_chunk_count	mean_top_retrieval_score	hybrid_context	per_option_retrieval	quality_check	quality_changed	source_files	draft_answer	final_answer
+1	5	ET-RAG	test.agent_etrag	A5	Full ET-RAG	cosine retrieval + evidence quality + temporal recency + hybrid paper context + per-option retrieval + quality check	0.5	0.3	0.2	1	Which of the following are components of the A-T-N AD biomarker framework?	A. Amyloid beta | B. Tau | C. Neurodegeneration markers | D. Synaptic vesicle proteins	A, B, C	Amyloid beta | Tau | Neurodegeneration markers	A, B, C	True	0.75768	10.773	2.596	1.528	27	20	0.593372	True	True	True	False	2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf | 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf | 2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf | 2024 Neuroinflammation in Alzheimer disease.pdf | alzheimer disease  2021.pdf	"A: SUPPORTED (The A-T-N framework includes amyloid beta as a key biomarker, specifically mentioned in the context of combining amyloid and tau biomarkers with non-specific biomarkers of neurodegeneration in the AD research framework proposed in 2018. — Alzheimer disease, 2021)
+
+B: SUPPORTED (Tau is explicitly identified as a component of the A-T-N framework, with p-tau being recognized as a specific biomarker for tau pathology in Alzheimer disease. — Alzheimer disease, 2021)
+
+C: SUPPORTED (Neurodegeneration markers are included in the A-T-N framework, as the framework aims to classify individuals in the AD spectrum using biomarkers of neurodegeneration. — Alzheimer disease, 2021)
+
+D: NOT SUPPORTED (There is no mention of synaptic vesicle proteins as part of the A-T-N framework in the provided excerpts. The focus is on amyloid, tau, and neurodegeneration markers.) 
+
+ANSWER: ABC"	"A: SUPPORTED (The A-T-N framework includes amyloid beta as a key biomarker, specifically mentioned in the context of combining amyloid and tau biomarkers with non-specific biomarkers of neurodegeneration in the AD research framework proposed in 2018. — Alzheimer disease, 2021)
+
+B: SUPPORTED (Tau is explicitly identified as a component of the A-T-N framework, with p-tau being recognized as a specific biomarker for tau pathology in Alzheimer disease. — Alzheimer disease, 2021)
+
+C: SUPPORTED (Neurodegeneration markers are included in the A-T-N framework, as the framework aims to classify individuals in the AD spectrum using biomarkers of neurodegeneration. — Alzheimer disease, 2021)
+
+D: NOT SUPPORTED (There is no mention of synaptic vesicle proteins as part of the A-T-N framework in the provided excerpts. The focus is on amyloid, tau, and neurodegeneration markers.) 
+
+ANSWER: ABC"
+1	5	ET-RAG	test.agent_etrag	A5	Full ET-RAG	cosine retrieval + evidence quality + temporal recency + hybrid paper context + per-option retrieval + quality check	0.5	0.3	0.2	2	Which sleep-related conditions are discussed as contributing to AD progression?	A. Sleep apnea | B. Long sleep duration | C. Short sleep duration | D. Insomnia	A, B, C, D	Sleep apnea | Long sleep duration | Short sleep duration | Insomnia	C	False	0.734835	11.098	3.115	1.117	16	16	0.528101	True	True	True	False	2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf | 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf | 2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf | 2025 Oligodendrocytes in Alzheimer’s disease pathophysiology.pdf | 2025 Updates on mouse models of Alzheimer’s disease.pdf | Recent advances in Alzheimer’s disease mechanisms clinical trials and new drug development strategies.pdf | alzheimer disease  2021.pdf	"A: NOT SUPPORTED  
+The high-relevance excerpts do not mention sleep apnea as a contributing factor to AD progression. The focus is on sleep disturbances in general, particularly the relationship between sleep characteristics and AD pathogenesis, but sleep apnea is not specifically discussed.
+
+B: NOT SUPPORTED  
+There is no mention of long sleep duration in the context of AD progression in the high-relevance excerpts. The excerpts discuss changes in sleep patterns with aging and in AD but do not specifically address long sleep duration as a factor.
+
+C: SUPPORTED  
+The high-relevance excerpts indicate that individuals with AD exhibit an impairment in the enhancement of slow-wave activity, which is associated with sleep homeostasis. This suggests that short sleep duration and disturbances in sleep architecture may contribute to AD progression (Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease, 2024).
+
+D: NOT SUPPORTED  
+Insomnia is not specifically mentioned in the high-relevance excerpts as a contributing factor to AD progression. The focus is on general sleep disturbances rather than insomnia specifically.
+
+ANSWER: C"	"A: NOT SUPPORTED  
+The high-relevance excerpts do not mention sleep apnea as a contributing factor to AD progression. The focus is on sleep disturbances in general, particularly the relationship between sleep characteristics and AD pathogenesis, but sleep apnea is not specifically discussed.
+
+B: NOT SUPPORTED  
+There is no mention of long sleep duration in the context of AD progression in the high-relevance excerpts. The excerpts discuss changes in sleep patterns with aging and in AD but do not specifically address long sleep duration as a factor.
+
+C: SUPPORTED  
+The high-relevance excerpts indicate that individuals with AD exhibit an impairment in the enhancement of slow-wave activity, which is associated with sleep homeostasis. This suggests that short sleep duration and disturbances in sleep architecture may contribute to AD progression (Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease, 2024).
+
+D: NOT SUPPORTED  
+Insomnia is not specifically mentioned in the high-relevance excerpts as a contributing factor to AD progression. The focus is on general sleep disturbances rather than insomnia specifically.
+
+ANSWER: C"
+1	5	ET-RAG	test.agent_etrag	A5	Full ET-RAG	cosine retrieval + evidence quality + temporal recency + hybrid paper context + per-option retrieval + quality check	0.5	0.3	0.2	3	Which interventions were identified as promising for sleep-related AD therapy?	A. CBT-I | B. Suvorexant | C. CPAP | D. Ketamine	A, B, C	CBT-I | Suvorexant | CPAP	UNPARSED	False	0.737163	7.79	2.479	0.881	17	17	0.534751	True	True	True	False	2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf | 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf | 2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf | 2025 Updates on mouse models of Alzheimer’s disease.pdf | Recent advances in Alzheimer’s disease mechanisms clinical trials and new drug development strategies.pdf | alzheimer disease  2021.pdf	"A: NOT SUPPORTED  
+B: NOT SUPPORTED  
+C: NOT SUPPORTED  
+D: NOT SUPPORTED  
+
+ANSWER: [no supported letters]  
+
+The high-relevance excerpts and paper-level abstracts provided do not mention any of the interventions (CBT-I, suvorexant, CPAP, or ketamine) as promising for sleep-related therapy in Alzheimer's disease. The focus of the excerpts is primarily on the relationship between sleep disturbances and Alzheimer's disease, but they do not specify any therapeutic interventions."	"A: NOT SUPPORTED  
+B: NOT SUPPORTED  
+C: NOT SUPPORTED  
+D: NOT SUPPORTED  
+
+The high-relevance excerpts and paper-level abstracts provided do not mention any of the interventions (CBT-I, suvorexant, CPAP, or ketamine) as promising for sleep-related therapy in Alzheimer's disease. The focus of the excerpts is primarily on the relationship between sleep disturbances and Alzheimer's disease, but they do not specify any therapeutic interventions.
+
+ANSWER: [no supported letters]"
+1	5	ET-RAG	test.agent_etrag	A5	Full ET-RAG	cosine retrieval + evidence quality + temporal recency + hybrid paper context + per-option retrieval + quality check	0.5	0.3	0.2	4	Hearing loss in older adults may lead to which of the following?	A. Decreased brain volume | B. Higher tau levels | C. Lower social engagement | D. Enhanced neurogenesis	A, B, C	Decreased brain volume | Higher tau levels | Lower social engagement	NOT_COVERED	False	0.92	19.978	2.265	0.772	22	20	0.565056	True	True	True	False	2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf | 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf | 2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf | 2024 Immune Activation in Alzheimer Disease.pdf | 2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf | 2024 Neuroinflammation in Alzheimer disease.pdf | 2025 Oligodendrocytes in Alzheimer’s disease pathophysiology.pdf | 2025 Updates on mouse models of Alzheimer’s disease.pdf | alzheimer disease  2021.pdf	"A: NOT SUPPORTED  
+The high-relevance excerpts do not provide evidence linking hearing loss in older adults to decreased brain volume. The topic of brain volume changes related to hearing loss is not specifically addressed in the provided papers.
+
+B: NOT SUPPORTED  
+There is no direct evidence in the high-relevance excerpts linking hearing loss in older adults to higher tau levels. The papers do not discuss this relationship explicitly.
+
+C: SUPPORTED  
+The high-relevance excerpts indicate that lifestyle factors, including social engagement, can influence dementia risk and cognitive performance. Specifically, lower social engagement is mentioned as a risk factor for dementia, which can be associated with hearing loss in older adults (Neuroinflammation in Alzheimer disease, 2024).
+
+D: NOT SUPPORTED  
+The high-relevance excerpts do not provide evidence that hearing loss in older adults leads to enhanced neurogenesis. The topic of neurogenesis in relation to hearing loss is not covered in the provided papers.
+
+ANSWER: C"	"A: NOT SUPPORTED  
+The high-relevance excerpts do not provide evidence linking hearing loss in older adults to decreased brain volume. The topic of brain volume changes related to hearing loss is not specifically addressed in the provided papers.
+
+B: NOT SUPPORTED  
+There is no direct evidence in the high-relevance excerpts linking hearing loss in older adults to higher tau levels. The papers do not discuss this relationship explicitly.
+
+C: SUPPORTED  
+The high-relevance excerpts indicate that lifestyle factors, including social engagement, can influence dementia risk and cognitive performance. Specifically, lower social engagement is mentioned as a risk factor for dementia, which can be associated with hearing loss in older adults (Neuroinflammation in Alzheimer disease, 2024).
+
+D: NOT SUPPORTED  
+The high-relevance excerpts do not provide evidence that hearing loss in older adults leads to enhanced neurogenesis. The topic of neurogenesis in relation to hearing loss is not covered in the provided papers.
+
+ANSWER: C"
+1	5	ET-RAG	test.agent_etrag	A5	Full ET-RAG	cosine retrieval + evidence quality + temporal recency + hybrid paper context + per-option retrieval + quality check	0.5	0.3	0.2	5	Which factors have been epidemiologically linked to AD?	A. Hypoxia | B. Gut microbiota imbalance | C. High education | D. Diet	A, B, D	Hypoxia | Gut microbiota imbalance | Diet	C, D	False	0.746368	9.999	2.586	1.127	19	19	0.56105	True	True	True	True	2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf | 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf | 2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf | 2024 Immune Activation in Alzheimer Disease.pdf | 2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf | 2024 Neuroinflammation in Alzheimer disease.pdf | 2025 Updates on mouse models of Alzheimer’s disease.pdf | Recent advances in Alzheimer’s disease mechanisms clinical trials and new drug development strategies.pdf | alzheimer disease  2021.pdf	"A: NOT SUPPORTED  
+The high-relevance excerpts do not provide any direct evidence linking hypoxia to Alzheimer's disease (AD). The papers focus on oxidative stress, neuroinflammation, and other factors but do not mention hypoxia as a risk factor.
+
+B: NOT SUPPORTED  
+The high-relevance excerpts do not specifically discuss gut microbiota imbalance as a factor linked to AD. While there is mention of the gut microbiome's influence on cognitive parameters in mice with AD, it does not establish a direct epidemiological link to AD in humans.
+
+C: NOT SUPPORTED  
+The high-relevance excerpts do not provide direct evidence linking high education to AD. Although education is often discussed in the context of cognitive resilience, the excerpts do not explicitly state that high education is an epidemiological factor linked to AD.
+
+D: SUPPORTED  
+The high-relevance excerpts indicate that specific dietary patterns, particularly a well-balanced diet, have been linked to AD risk. The Mediterranean diet is mentioned as a dietary pattern associated with better cognitive outcomes in patients at risk of dementia (Oxidative damage in neurodegeneration: roles in the pathogenesis and progression of Alzheimer disease, 2023).
+
+ANSWER: D"	"A: NOT SUPPORTED  
+The high-relevance excerpts do not provide any direct evidence linking hypoxia to Alzheimer's disease (AD). The papers focus on oxidative stress, neuroinflammation, and other factors but do not mention hypoxia as a risk factor.
+
+B: NOT SUPPORTED  
+The high-relevance excerpts do not specifically discuss gut microbiota imbalance as a factor linked to AD. While there is mention of the gut microbiome's influence on cognitive parameters in mice with AD, it does not establish a direct epidemiological link to AD in humans.
+
+C: SUPPORTED  
+The high-relevance excerpts indicate that higher education is often discussed in the context of cognitive resilience, suggesting a protective effect against dementia, which implies a link to AD (Alzheimer disease, 2021).
+
+D: SUPPORTED  
+The high-relevance excerpts indicate that specific dietary patterns, particularly a well-balanced diet, have been linked to AD risk. The Mediterranean diet is mentioned as a dietary pattern associated with better cognitive outcomes in patients at risk of dementia (Oxidative damage in neurodegeneration: roles in the pathogenesis and progression of Alzheimer disease, 2023).
+
+ANSWER: CD"

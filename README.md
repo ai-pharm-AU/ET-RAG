@@ -1,10 +1,10 @@
 # ET-RAG: A Multi-Agent RAG Framework for Biomedical Literature Analysis
 
-A Streamlit application that uses **3 AI agents** to answer research questions from uploaded medical papers. Each agent uses a different retrieval strategy; their answers are presented side by side so the user can see where the agents agree and where they diverge.
+A Streamlit application that uses **3 AI agents** to answer research questions from uploaded medical papers. Each agent receives a differently assembled portion of the extracted text; their answers are presented side by side so the user can see where the agents agree and where they diverge.
 
 ## What It Does
 
-Upload research papers as PDFs, then ask questions. Three agents read the papers independently, and each returns an answer grounded in the uploaded content. A synthesis layer combines the three responses into a single cited answer with a consensus indicator.
+Upload research papers as PDFs, then ask questions. Three agents analyze different views of the extracted text, and each returns an answer grounded in the content made available to it. A synthesis layer combines the three responses into a single cited answer with a consensus indicator.
 
 - Paste one question or forty — the system auto-detects question count and type.
 - Irrelevant questions are identified as "not covered" (zero hallucination).
@@ -14,9 +14,9 @@ Upload research papers as PDFs, then ask questions. Three agents read the papers
 
 | Agent | Strategy | How It Works |
 |-------|----------|-------------|
-| **Full Context** | Condensed corpus | Reads the first 8K characters of every paper in one prompt. Good at cross-paper synthesis. |
+| **Paper Prefix** | Fixed leading excerpt | Reads only the first 8,000 characters of each paper's extracted text in one prompt. This is not a summary: later sections are unavailable to this agent. |
 | **Cosine RAG** | Chunk retrieval | Embeds the question, retrieves the top-25 most similar chunks from a FAISS index. Fast and precise for specific facts. |
-| **ET-RAG** | Hybrid (novel) | Retrieves chunks, reranks them by evidence quality + recency, then adds 15K characters per paper as background context. Combines retrieval precision with corpus-wide breadth. |
+| **ET-RAG** | Hybrid (novel) | Retrieves chunks, reranks them by evidence quality + recency, then adds the first 15,000 extracted characters of each paper as supplementary prefixes. |
 
 All three agents use **GPT-4o-mini** as the language model. They differ only in how they assemble the context window, so any performance difference is attributable to the retrieval strategy.
 
@@ -81,9 +81,9 @@ User uploads PDFs
 User asks a question
     → Medical synonym expansion (15 term families)
     → Three agents run in parallel:
-        Agent 1: Full Context (condensed papers, no retrieval)
+        Agent 1: Paper Prefix (first 8,000 extracted characters per paper; no retrieval or summarization)
         Agent 2: Cosine RAG (multi-query retrieval, top-25 chunks)
-        Agent 3: ET-RAG (retrieval + reranking + paper context)
+        Agent 3: ET-RAG (retrieval + reranking + leading paper prefixes)
     → Synthesis layer combines responses
     → User sees: each agent's answer + final synthesized answer + consensus
 ```
@@ -92,7 +92,7 @@ User asks a question
 
 Tested on 40 questions across 4 types using 10 Alzheimer's disease papers (2021–2025). All agents used GPT-4o-mini at temperature 0.0.
 
-| Question Type | Full Context | Cosine RAG | ET-RAG |
+| Question Type | Paper Prefix | Cosine RAG | ET-RAG |
 |--------------|-------------|------------|--------|
 | Single Choice (10) | 90% | 90% | **90%** |
 | Multiple Choice (10) | 0.58 | 0.33 | **0.59** |
@@ -114,6 +114,8 @@ TOP_K_CHUNKS = 20       # Chunks sent to LLM
 RETRIEVAL_CANDIDATES = 40
 CHUNK_SIZE = 2000
 CHUNK_OVERLAP = 400
+PAPER_PREFIX_CHAR_LIMIT = 8_000  # Leading excerpt, not a summary
+ETRAG_PREFIX_CHAR_LIMIT = 15_000
 ```
 
 ## Tech Stack
