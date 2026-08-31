@@ -1,6 +1,6 @@
 # Evidence-Temporal Retrieval-Augmented Generation Framework for Biomedical Literature Analysis: Model Development and Evaluation Case Study
 
-**Revanth Reddy Palem<sup>1</sup>, Hao Chen<sup>2*</sup>, and Zongliang Yue<sup>3*</sup>**
+**Revanth Reddy Palem<sup>1</sup>, Hao Chen<sup>2\*</sup>, and Zongliang Yue<sup>3\*</sup>**
 
 <sup>1</sup> Department of Computer Science and Software Engineering, Auburn University, Auburn, AL  
 <sup>2</sup> College of Forestry, Wildlife and Environment, Auburn University, Auburn, AL  
@@ -116,7 +116,7 @@ Tested on 40 questions across 4 types using 10 Alzheimer's disease papers (2021â
 Key parameters at the top of `INTEGRATED_MULTI_AGENT_COMPLETE.py`:
 
 ```python
-TEMPERATURE = 0.0       # Deterministic output
+TEMPERATURE = 0.1       # Deterministic output
 MAX_TOKENS = 2048
 TOP_K_CHUNKS = 20       # Chunks sent to LLM
 RETRIEVAL_CANDIDATES = 40
