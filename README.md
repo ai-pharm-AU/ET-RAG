@@ -1,4 +1,12 @@
-# ET-RAG: A Multi-Agent RAG Framework for Biomedical Literature Analysis
+# Evidence-Temporal Retrieval-Augmented Generation Framework for Biomedical Literature Analysis: Model Development and Evaluation Case Study
+
+**Revanth Reddy Palem<sup>1</sup>, Hao Chen<sup>2*</sup>, and Zongliang Yue<sup>3*</sup>**
+
+<sup>1</sup> Department of Computer Science and Software Engineering, Auburn University, Auburn, AL  
+<sup>2</sup> College of Forestry, Wildlife and Environment, Auburn University, Auburn, AL  
+<sup>3</sup> Harrison College of Pharmacy, Auburn University, Auburn, AL
+
+**Corresponding authors:** [hzc0134@auburn.edu](mailto:hzc0134@auburn.edu) and [zzy0065@auburn.edu](mailto:zzy0065@auburn.edu)
 
 A Streamlit application that uses **3 AI agents** to answer research questions from uploaded medical papers. Each agent receives a differently assembled portion of the extracted text; their answers are presented side by side so the user can see where the agents agree and where they diverge.
 
@@ -139,6 +147,8 @@ CHATBOT/
 └── README.md
 ```
 
-## Contributors
+## Authors
 
-- **Revanth Reddy Palem** — Auburn University
+- **Revanth Reddy Palem** — Department of Computer Science and Software Engineering, Auburn University
+- **Hao Chen** — College of Forestry, Wildlife and Environment, Auburn University; corresponding author: [hzc0134@auburn.edu](mailto:hzc0134@auburn.edu)
+- **Zongliang Yue** — Harrison College of Pharmacy, Auburn University; corresponding author: [zzy0065@auburn.edu](mailto:zzy0065@auburn.edu)
