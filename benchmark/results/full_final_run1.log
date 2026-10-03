@@ -1,0 +1,145 @@
+
+[ET-RAG STAGE 2 - PAPER EXTRACTION]
+- 2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf: 96 pages, 526,832 characters, 363 chunks
+- 2024 Advancements and Challenges in Antiamyloid Therapy for.pdf: 15 pages, 74,847 characters, 53 chunks
+- 2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf: 20 pages, 127,907 characters, 84 chunks
+- 2024 Immune Activation in Alzheimer Disease.pdf: 30 pages, 118,158 characters, 83 chunks
+- 2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf: 13 pages, 96,578 characters, 61 chunks
+- 2024 Neuroinflammation in Alzheimer disease.pdf: 32 pages, 258,599 characters, 168 chunks
+- 2025 Oligodendrocytes in Alzheimer’s disease pathophysiology.pdf: 11 pages, 72,528 characters, 49 chunks
+- 2025 Updates on mouse models of Alzheimer’s disease.pdf: 33 pages, 161,536 characters, 115 chunks
+- Recent advances in Alzheimer’s disease mechanisms clinical trials and new drug development strategies.pdf: 35 pages, 238,571 characters, 159 chunks
+- alzheimer disease  2021.pdf: 21 pages, 145,019 characters, 94 chunks
+Corpus total: 10 papers and 1229 chunks
+
+[ET-RAG STAGE 3 - VECTOR INDEX]
+Loading cached FAISS index: /Users/revanthreddypalem/Desktop/AI-Chatbot/faiss_index_etrag_evaluation
+
+Answering 40 questions with 3 agents (gemini-3.8-flash / gpt-4o-mini / gpt-4o-mini, T=0.1)
+[ 1/40] SC1     7.9s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 2/40] SC2    11.0s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 3/40] SC3     5.4s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 4/40] SC4    43.5s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 5/40] SC5     4.4s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 6/40] SC6     4.1s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 7/40] SC7    42.2s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 8/40] SC8    10.5s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[ 9/40] SC9     6.0s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[10/40] SC10   42.9s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[11/40] MC1     6.2s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[12/40] MC2    23.0s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[13/40] MC3    65.9s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[14/40] MC4    10.7s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[15/40] MC5    19.3s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[16/40] MC6    12.7s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[17/40] MC7    30.7s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[18/40] MC8    15.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[19/40] MC9    11.1s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[20/40] MC10   33.3s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[21/40] SA1     7.9s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[22/40] SA2    18.4s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[23/40] SA3    14.1s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[24/40] SA4     9.5s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[25/40] SA5     9.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[26/40] SA6    50.9s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[27/40] SA7     7.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[28/40] SA8    11.5s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[29/40] SA9    30.0s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[30/40] SA10   14.7s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[31/40] LA1    14.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[32/40] LA2    20.0s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[33/40] LA3    13.1s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[34/40] LA4     9.3s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[35/40] LA5    22.0s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[36/40] LA6    11.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[37/40] LA7    12.5s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[38/40] LA8    50.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[39/40] LA9    13.6s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+[40/40] LA10   19.2s  Full Context=ok Cosine RAG=ok ET-RAG=ok
+
+Answers saved: benchmark/results/answers_full_final_run1.csv
+  scored SC1
+  scored SC2
+  scored SC3
+  scored SC4
+  scored SC5
+  scored SC6
+  scored SC7
+  scored SC8
+  scored SC9
+  scored SC10
+  scored MC1
+  scored MC2
+  scored MC3
+  scored MC4
+  scored MC5
+  scored MC6
+  scored MC7
+  scored MC8
+  scored MC9
+  scored MC10
+  scored SA1
+  scored SA2
+  scored SA3
+  scored SA4
+  scored SA5
+  scored SA6
+  scored SA7
+  scored SA8
+  scored SA9
+  scored SA10
+  scored LA1
+  scored LA2
+  scored LA3
+  scored LA4
+  scored LA5
+  scored LA6
+  scored LA7
+  scored LA8
+  scored LA9
+  scored LA10
+
+## Primary analysis (operational failures scored 0)
+
+| Agent | SC | MC | SA | LA | Avg |
+|---|---|---|---|---|---|
+| Full Context | 0.90 | 0.32 | 0.79 | 0.69 | 0.68 |
+| Cosine RAG | 1.00 | 0.38 | 0.83 | 0.85 | 0.77 |
+| ET-RAG | 0.90 | 0.68 | 0.89 | 0.86 | 0.83 |
+
+## SA dimension scores
+
+| Metric | Full Context | Cosine RAG | ET-RAG |
+|---|---|---|---|
+| Completeness | 0.76 | 0.74 | 0.83 |
+| Accuracy | 0.79 | 0.84 | 0.90 |
+| Relevance | 0.87 | 0.97 | 0.99 |
+| Overall | 0.79 | 0.83 | 0.89 |
+
+## LA dimension scores
+
+| Metric | Full Context | Cosine RAG | ET-RAG |
+|---|---|---|---|
+| Completeness | 0.65 | 0.80 | 0.81 |
+| Accuracy | 0.70 | 0.86 | 0.87 |
+| Relevance | 0.78 | 0.94 | 0.96 |
+| Overall | 0.69 | 0.85 | 0.86 |
+
+## Multiple choice exact matches
+
+| Agent | Exact |
+|---|---|
+| Full Context | 1/10 |
+| Cosine RAG | 2/10 |
+| ET-RAG | 5/10 |
+
+## Operational failures and unparsed choices
+
+| Agent | API failures | Unparsed |
+|---|---|---|
+| Full Context | 0 | 0 |
+| Cosine RAG | 0 | 0 |
+| ET-RAG | 0 | 0 |
+
+Scored answers: benchmark/results/scored_full_final_run1.csv
+Summary:        benchmark/results/summary_full_final_run1.md

@@ -1,0 +1,99 @@
+{
+  "embedding_model": "text-embedding-3-small",
+  "verified_metadata": {
+    "alzheimer disease  2021.pdf": [
+      "Alzheimer disease",
+      "2021"
+    ],
+    "Recent advances in Alzheimer\u2019s disease mechanisms clinical trials and new drug development strategies.pdf": [
+      "Recent advances in Alzheimer's disease: mechanisms, clinical trials and new drug development strategies",
+      "2024"
+    ],
+    "2024 Neuroinflammation in Alzheimer disease.pdf": [
+      "Neuroinflammation in Alzheimer disease",
+      "2025"
+    ],
+    "2024 Immune Activation in Alzheimer Disease.pdf": [
+      "Immune activation in Alzheimer disease",
+      "2024"
+    ],
+    "2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf": [
+      "Cell type-specific roles of APOE4 in Alzheimer disease",
+      "2024"
+    ],
+    "2025 Oligodendrocytes in Alzheimer\u2019s disease pathophysiology.pdf": [
+      "Oligodendrocytes in Alzheimer's disease pathophysiology",
+      "2025"
+    ],
+    "2025 Updates on mouse models of Alzheimer\u2019s disease.pdf": [
+      "Updates on mouse models of Alzheimer's disease",
+      "2024"
+    ],
+    "2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf": [
+      "Oxidative damage in neurodegeneration: roles in the pathogenesis and progression of Alzheimer disease",
+      "2024"
+    ],
+    "2024 Advancements and Challenges in Antiamyloid Therapy for.pdf": [
+      "Advancements and challenges in antiamyloid therapy for Alzheimer's disease: a comprehensive review",
+      "2024"
+    ],
+    "2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf": [
+      "Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease",
+      "2024"
+    ]
+  },
+  "chunk_size": 2000,
+  "chunk_overlap": 400,
+  "files": [
+    {
+      "name": "2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf",
+      "size": 8441926,
+      "modified_ns": 1790645441768054248
+    },
+    {
+      "name": "2024 Advancements and Challenges in Antiamyloid Therapy for.pdf",
+      "size": 887535,
+      "modified_ns": 1790645441772675629
+    },
+    {
+      "name": "2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf",
+      "size": 6670104,
+      "modified_ns": 1790645441811133599
+    },
+    {
+      "name": "2024 Immune Activation in Alzheimer Disease.pdf",
+      "size": 1833847,
+      "modified_ns": 1790645441821037655
+    },
+    {
+      "name": "2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf",
+      "size": 1947807,
+      "modified_ns": 1790645441829398125
+    },
+    {
+      "name": "2024 Neuroinflammation in Alzheimer disease.pdf",
+      "size": 3626111,
+      "modified_ns": 1790645441850023153
+    },
+    {
+      "name": "2025 Oligodendrocytes in Alzheimer\u2019s disease pathophysiology.pdf",
+      "size": 3086800,
+      "modified_ns": 1790645441891503169
+    },
+    {
+      "name": "2025 Updates on mouse models of Alzheimer\u2019s disease.pdf",
+      "size": 3366953,
+      "modified_ns": 1790645441917106955
+    },
+    {
+      "name": "Recent advances in Alzheimer\u2019s disease mechanisms clinical trials and new drug development strategies.pdf",
+      "size": 5571292,
+      "modified_ns": 1790645441958215553
+    },
+    {
+      "name": "alzheimer disease  2021.pdf",
+      "size": 3844951,
+      "modified_ns": 1790645441976951204
+    }
+  ]
+}

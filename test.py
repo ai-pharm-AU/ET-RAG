@@ -5,9 +5,9 @@ MULTI-AGENT ALZHEIMER'S RESEARCH CHATBOT
 Production-Ready Version
 
 Three AI Agents Answer Your Research Questions:
-- Paper Prefix Agent (GPT-4o-mini) - Reads the first 8,000 extracted characters of each paper
-- Cosine RAG Agent (GPT-4o-mini) - Multi-query semantic retrieval
-- ET-RAG Agent (GPT-4o-mini) - Hybrid: Evidence-weighted retrieval + paper prefixes
+- Full Context Agent (Gemini 3.8 Flash) - Reads the entire extracted corpus in one prompt
+- Cosine RAG Agent (GPT-4o-mini) - Multi-query semantic retrieval, top-15 chunks
+- ET-RAG Agent (GPT-4o-mini) - Evidence-temporal reranking (top-25) + focused hybrid context
 
 Features:
 - Upload your own research papers
@@ -40,9 +40,13 @@ import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path as _DocxPath
 
-DEFAULT_QUESTIONS_DOCX = _DocxPath(
-    r"C:\Users\yzlco\Desktop\chatbot\code\Questions for alz bot.docx"
-)
+# [2026-09-28 PAPER-ALIGNMENT] Resolve the answer-key DOCX from the repository
+# so the evaluation runs on any machine.
+# ORIGINAL CODE (retained as requested):
+# DEFAULT_QUESTIONS_DOCX = _DocxPath(
+#     r"C:\Users\yzlco\Desktop\chatbot\code\Questions for alz bot.docx"
+# )
+DEFAULT_QUESTIONS_DOCX = _DocxPath(__file__).resolve().parent / "Questions for alz bot.docx"
 _WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
@@ -278,11 +282,14 @@ from PyPDF2 import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import os
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.vectorstores import FAISS
 from langchain_classic.chains.question_answering import load_qa_chain
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 import re
+import unicodedata
+import collections
 import io
 import json
 from datetime import datetime
@@ -333,6 +340,24 @@ ETRAG_CONTEXT_CHUNKS = 25
 HYBRID_MAX_PAPERS = 3
 HYBRID_ABSTRACT_CHAR_LIMIT = 8_000
 HYBRID_PASSAGE_RADIUS = 500
+
+# [2026-09-30 OPEN-ENDED SYNTHESIS] Long answers must synthesize across papers.
+# Capping any one paper at about a third of the 25-chunk context guarantees at
+# least three contributing papers. The cap was fixed from this rationale before
+# evaluation, not tuned on benchmark scores.
+LONG_ANSWER_MAX_CHUNKS_PER_PAPER = 8
+
+# [2026-09-28 PAPER-ALIGNMENT] Baseline settings described in the manuscript.
+# Agent 1 is the retrieval-free Full Context baseline: the entire extracted
+# corpus in one Gemini prompt. gemini-2.0-flash was retired, so the current
+# Flash model is pinned by name for reproducibility.
+FULL_CONTEXT_MODEL = "gemini-3.8-flash"
+# Gemini 3.x spends output tokens on internal reasoning before the visible
+# answer; at 4,096 tokens, long answers were cut off mid-sentence (finish
+# reason MAX_TOKENS, ~3,900 reasoning tokens). 16,384 leaves room for both.
+FULL_CONTEXT_MAX_OUTPUT_TOKENS = 16384
+# Cosine RAG sends the 15 most similar chunks; ET-RAG keeps TOP_K_CHUNKS (25).
+COSINE_TOP_K_CHUNKS = 15
 
 # Positional context limits. These slices are leading excerpts of the extracted
 # PDF text; they are not generated summaries and do not represent later sections.
@@ -385,7 +410,10 @@ except Exception as e:
         st.error(f"⚠️ API Configuration Error: {e}")
 
 # Session state
-if RUNNING_IN_STREAMLIT:
+# [2026-09-28 PAPER-ALIGNMENT] Wrapped in a function that main() also calls:
+# when INTEGRATED_MULTI_AGENT_COMPLETE.py imports this module, the module-level
+# call runs only once per process, but every new browser session needs its keys.
+def _init_session_state():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     if "papers_processed" not in st.session_state:
@@ -400,6 +428,10 @@ if RUNNING_IN_STREAMLIT:
         st.session_state.vector_store_etrag = None
     if "embeddings_model" not in st.session_state:
         st.session_state.embeddings_model = None
+
+
+if RUNNING_IN_STREAMLIT:
+    _init_session_state()
 
 # %% STEP 4 - Query expansion
 # ============================================================================
@@ -746,6 +778,159 @@ PAPER PREFIXES:
         return {"answer": f"Error: {str(e)}", "confidence": 0.0, "files_used": [], "success": False}
 
 
+# %% STEP 8b - Agent 1: Full Context baseline (requires a Google API key)
+# ============================================================================
+# [2026-09-28 PAPER-ALIGNMENT] The manuscript's Agent 1 is a retrieval-free,
+# maximum-context baseline: every uploaded paper's complete extracted text is
+# sent to Gemini in a single prompt (about 460,000 characters for the 10-paper
+# benchmark corpus, far below the one-million-token context window).
+# agent_paper_prefix above is retained for reference but is no longer wired
+# into the UI or the benchmark.
+# ============================================================================
+
+_TRANSIENT_API_ERRORS = ('429', 'rate limit', 'resource_exhausted', 'resource exhausted',
+                         '503', 'unavailable', 'overloaded', 'deadline', 'timeout')
+
+
+def _message_text(content):
+    """Return plain text from LangChain message content (a string or a list of parts)."""
+    if isinstance(content, str):
+        return content
+    return "".join(
+        part.get("text", "") if isinstance(part, dict) else str(part)
+        for part in content or []
+    )
+
+
+def build_full_context_corpus(paper_metadata, raw_texts):
+    """Concatenate every paper's full extracted text with a citation header."""
+    return "\n\n".join(
+        f"=== PAPER {idx}: {metadata.get('title', filename)} "
+        f"({metadata.get('year', 'Unknown')}) ===\n{raw_texts.get(filename, '')}"
+        for idx, (filename, metadata) in enumerate(paper_metadata.items(), 1)
+    )
+
+
+def agent_full_context(question, paper_metadata=None, raw_texts=None,
+                       question_type='short_answer', llm=None, max_attempts=5):
+    """Full Context agent: Gemini answers from the entire corpus, no retrieval."""
+    started = time.perf_counter()
+    try:
+        paper_metadata = paper_metadata if paper_metadata is not None else st.session_state.paper_metadata
+        raw_texts = raw_texts if raw_texts is not None else st.session_state.raw_texts
+        corpus = build_full_context_corpus(paper_metadata, raw_texts)
+
+        if question_type == 'single_choice':
+            type_rule = ("SINGLE CHOICE: Pick the ONE best answer. Start your response with the "
+                         "letter (A, B, C, or D), then explain briefly. Keep under 100 words.")
+        elif question_type == 'multiple_choice':
+            type_rule = ("MULTIPLE CHOICE: Zero, one, or several options may be supported. Evaluate "
+                         "A, B, C, and D independently and give one short evidence sentence for each. "
+                         "End with a final line exactly in the form 'ANSWER: A, C' (comma-separated "
+                         "letters), or 'ANSWER: NONE' if no option is supported.")
+        elif question_type == 'long_answer':
+            type_rule = "Answer in 200-250 words, integrating evidence from multiple papers."
+        else:
+            type_rule = "Answer in 100-150 words."
+
+        # The papers come first and the question last, which suits long-context prompting.
+        prompt = f"""You are a medical research assistant. Answer the question using ONLY the research papers below.
+
+RESEARCH PAPERS (complete extracted text of every uploaded paper):
+{corpus}
+
+QUESTION:
+{question}
+
+INSTRUCTIONS:
+- {type_rule}
+- Cite the supporting papers by title and year.
+- Search for synonyms and related terms across all papers.
+- Do NOT use external knowledge.
+- If the question concerns a topic entirely outside these papers, reply: "NOT_COVERED: This information is not covered in the uploaded research papers."
+"""
+
+        if llm is None:
+            llm = ChatGoogleGenerativeAI(
+                model=FULL_CONTEXT_MODEL,
+                temperature=TEMPERATURE,
+                max_output_tokens=FULL_CONTEXT_MAX_OUTPUT_TOKENS,
+                max_retries=0,  # retries are handled below with longer backoff
+            )
+
+        last_error = None
+        for attempt in range(max_attempts):
+            try:
+                response = llm.invoke(prompt)
+                answer = _message_text(response.content).strip()
+                if not answer:
+                    raise RuntimeError("empty response")
+                break
+            except Exception as api_err:
+                last_error = api_err
+                if attempt + 1 < max_attempts and any(
+                    marker in str(api_err).lower() for marker in _TRANSIENT_API_ERRORS
+                ):
+                    time.sleep(5 * 2 ** attempt)  # 5, 10, 20, 40 seconds
+                else:
+                    raise
+        else:
+            raise last_error
+
+        # A truncated answer is an operational failure, not a complete answer.
+        finish_reason = str((response.response_metadata or {}).get('finish_reason', ''))
+        if 'MAX_TOKENS' in finish_reason.upper():
+            raise RuntimeError(
+                f"response truncated at the {FULL_CONTEXT_MAX_OUTPUT_TOKENS:,}-token output limit"
+            )
+
+        files_used = [
+            filename for filename, metadata in paper_metadata.items()
+            if metadata.get('title', '') and metadata['title'].lower()[:20] in answer.lower()
+        ]
+        if re.search(r'\bnot[_ ]covered\b', answer, re.IGNORECASE):
+            confidence = 0.92
+        else:
+            # Longer, better-cited answers indicate that more evidence was located.
+            confidence = min(0.55 + 0.05 * len(files_used) + min(len(answer), 1500) / 7500, 0.90)
+
+        return {
+            "answer": answer,
+            "confidence": confidence,
+            "files_used": files_used,
+            "success": True,
+            "corpus_char_count": len(corpus),
+            "execution_time_sec": time.perf_counter() - started,
+        }
+    except Exception as e:
+        return {
+            "answer": f"Error: {str(e)}",
+            "confidence": 0.0,
+            "files_used": [],
+            "success": False,
+            "execution_time_sec": time.perf_counter() - started,
+        }
+
+
+def parse_question_options(question_text):
+    """Return {'A': text, ...} for an inline or multi-line A-D option list, else {}."""
+    markers = list(re.finditer(r'(?:^|(?<=\s))([A-D])[\.\)]\s+', question_text))
+    for start_index, marker in enumerate(markers):
+        if marker.group(1) != 'A':
+            continue
+        chain = [marker]
+        for candidate in markers[start_index + 1:]:
+            if candidate.group(1) == chr(ord(chain[-1].group(1)) + 1):
+                chain.append(candidate)
+        if len(chain) >= 3:
+            options = {}
+            for position, option_marker in enumerate(chain):
+                end = chain[position + 1].start() if position + 1 < len(chain) else len(question_text)
+                options[option_marker.group(1)] = question_text[option_marker.end():end].strip()
+            return options
+    return {}
+
+
 # %% STEP 9 - Agent 2: cosine RAG (requires a vector store and API key)
 # ============================================================================
 # AGENT 2: COSINE RAG (OPENAI)
@@ -770,19 +955,19 @@ def multi_query_retrieve(vector_store, question, k=RETRIEVAL_CANDIDATES):
     all_docs = {}
     # Strategy 1: Original question
     for doc, score in vector_store.similarity_search_with_score(question, k=k):
-        key = doc.page_content[:100]
+        key = doc.page_content
         if key not in all_docs or score < all_docs[key][1]:
             all_docs[key] = (doc, score)
     # Strategy 2: Expanded query with synonyms
     expanded = expand_query(question)
     for doc, score in vector_store.similarity_search_with_score(expanded, k=k):
-        key = doc.page_content[:100]
+        key = doc.page_content
         if key not in all_docs or score < all_docs[key][1]:
             all_docs[key] = (doc, score)
     # Strategy 3: Individual key terms
     for term in extract_key_terms(question):
         for doc, score in vector_store.similarity_search_with_score(term, k=10):
-            key = doc.page_content[:100]
+            key = doc.page_content
             if key not in all_docs or score < all_docs[key][1]:
                 all_docs[key] = (doc, score)
     return all_docs
@@ -801,7 +986,10 @@ def agent_cosine_rag(question, vector_store=None, question_type='short_answer'):
         all_docs = multi_query_retrieve(vector_store, question)
         
         # Sort by score and take top K
-        sorted_docs = sorted(all_docs.values(), key=lambda x: x[1])[:TOP_K_CHUNKS]
+        # [2026-09-28 PAPER-ALIGNMENT] The manuscript's Cosine RAG uses top-15.
+        # ORIGINAL CODE (retained as requested):
+        # sorted_docs = sorted(all_docs.values(), key=lambda x: x[1])[:TOP_K_CHUNKS]
+        sorted_docs = sorted(all_docs.values(), key=lambda x: x[1])[:COSINE_TOP_K_CHUNKS]
         
         if not sorted_docs:
             return {
@@ -961,10 +1149,15 @@ def calculate_chunk_evidence_weight(page_content, study_type):
     return float((0.55 * base_score) + (0.45 * strongest_discussed_score))
 
 
+# [2026-09-30 RETRIEVAL FIX] Chunks are de-duplicated by their full text. The
+# previous key, page_content[:100], fell entirely inside the PAPER/YEAR/
+# STUDY_TYPE/SOURCE_FILE header for 9 of the 10 benchmark papers, so all of a
+# paper's chunks shared one key and at most one chunk per paper survived each
+# merge; only the short-titled 2021 primer kept distinct chunks.
 def _merge_etrag_retrieval_results(all_docs, search_results):
     """Merge FAISS results, keeping the best (lowest) distance per chunk."""
     for doc, score in search_results:
-        key = doc.page_content[:100]
+        key = doc.page_content
         if key not in all_docs or score < all_docs[key][1]:
             all_docs[key] = (doc, score)
 
@@ -1263,6 +1456,61 @@ def _extract_etrag_multiple_prediction(answer):
     return _normalize_etrag_multiple_keys(supported_keys) or "UNPARSED"
 
 
+def _select_diverse_chunks(scored_docs, limit, per_paper_cap):
+    """Take chunks in ET-RAG score order, at most per_paper_cap from any one paper.
+
+    If the cap leaves fewer than `limit` chunks, the next-best skipped chunks fill
+    the remaining slots. The result keeps the original score order.
+    """
+    counts, chosen, skipped = collections.Counter(), [], []
+    for position, item in enumerate(scored_docs):
+        match = re.search(r'SOURCE_FILE:\s*([^\n]+)', item['doc'].page_content)
+        source = match.group(1).strip() if match else f"unknown-{position}"
+        if counts[source] < per_paper_cap and len(chosen) < limit:
+            counts[source] += 1
+            chosen.append(position)
+        else:
+            skipped.append(position)
+    chosen += skipped[:max(limit - len(chosen), 0)]
+    return [scored_docs[position] for position in sorted(chosen)]
+
+
+def _build_open_ended_etrag_prompt(question, expanded, chunk_context, paper_context, type_rule):
+    """Synthesis prompt for short- and long-answer ET-RAG questions."""
+    supplementary = (
+        "\n2. SUPPLEMENTARY ABSTRACTS (broader paper context; secondary to the excerpts):\n"
+        f"{paper_context}\n"
+        if paper_context else ""
+    )
+    return f"""You are an expert medical research assistant writing an evidence-based answer from research-paper excerpts.
+
+QUESTION:
+{question}
+
+EXPANDED SEARCH TERMS (retrieval aid only, not evidence):
+{expanded}
+
+1. HIGH-RELEVANCE EXCERPTS (primary evidence; ranked by relevance, study-design strength, and recency):
+{chunk_context}
+{supplementary}
+ANSWER REQUIREMENTS:
+- {type_rule}
+- Identify each part of the question and address every part.
+- Synthesize across papers: combine complementary findings and note where papers disagree or where evidence is preliminary.
+- When sources conflict, give more weight to stronger study designs and more recent publications.
+- Cite the paper title and year for each claim.
+- If the excerpts do not address some part of the question, say so briefly instead of filling the gap from outside knowledge.
+
+EVIDENCE RULES:
+- Use only the supplied excerpts and abstracts; do not use external knowledge.
+- Never attribute a fact to a paper unless a supplied excerpt states it.
+- Search terms are hints only and are never evidence.
+- Only when the question belongs to a field unrelated to the supplied papers, reply exactly "NOT_COVERED: This information is not covered in the uploaded research papers."
+
+Answer:
+"""
+
+
 def agent_etrag(
     question,
     vector_store=None,
@@ -1348,7 +1596,7 @@ def agent_etrag(
                     option_query,
                     k=option_retrieval_k,
                 ):
-                    key = doc.page_content[:100]
+                    key = doc.page_content
                     if key not in all_docs or score < all_docs[key][1]:
                         all_docs[key] = (doc, score)
             option_retrieval_time = time.perf_counter() - option_retrieval_started
@@ -1422,7 +1670,15 @@ def agent_etrag(
         # the model. The old 40-chunk prompt diluted the exact option evidence.
         # ORIGINAL CODE (retained as requested):
         # selected_docs = scored_docs[:TOP_K_CHUNKS]
-        selected_docs = scored_docs[:min(TOP_K_CHUNKS, ETRAG_CONTEXT_CHUNKS)]
+        context_limit = min(TOP_K_CHUNKS, ETRAG_CONTEXT_CHUNKS)
+        # [2026-09-30 OPEN-ENDED SYNTHESIS] Source diversity for long answers only;
+        # choice questions keep the ablation's plain top-k selection.
+        if question_type == 'long_answer':
+            selected_docs = _select_diverse_chunks(
+                scored_docs, context_limit, LONG_ANSWER_MAX_CHUNKS_PER_PAPER
+            )
+        else:
+            selected_docs = scored_docs[:context_limit]
         print(f"the size of the seleted docs with scores:{len(selected_docs)}")
         top_chunks = [item['doc'] for item in selected_docs]
         avg_score = float(np.mean([item['score'] for item in selected_docs]))
@@ -1605,7 +1861,15 @@ def agent_etrag(
         #         Say "not covered" ONLY if topic is about a completely different field.
         #         Answer:
         #         """
-        prompt = f"""You are an expert medical research assistant performing evidence-grounded option classification.
+        # [2026-09-30 OPEN-ENDED SYNTHESIS] Short and long answers previously used
+        # the option-classification prompt written for choice questions. They now
+        # get a synthesis prompt; single and multiple choice are unchanged.
+        if question_type in ('short_answer', 'long_answer'):
+            prompt = _build_open_ended_etrag_prompt(
+                question, expanded, chunk_context, paper_context, type_rule
+            )
+        else:
+            prompt = f"""You are an expert medical research assistant performing evidence-grounded option classification.
 
                     QUESTION AND OPTIONS:
                     {question}
@@ -1621,6 +1885,8 @@ def agent_etrag(
                     {type_rule}
 
                     EVIDENCE PRIORITY AND SAFETY:
+                    - SCOPE CHECK FIRST: only when the QUESTION belongs to a field unrelated to the supplied papers (for example, a forestry or agriculture question asked of biomedical papers), reply exactly "NOT_COVERED: This information is not covered in the uploaded research papers." and choose no option. An option's words appearing in a retrieval lead do not bring such a question into scope. For any question within the papers' field, answer from the excerpts even when coverage is partial.
+                    - Never attribute a fact to a paper unless a supplied excerpt states it.
                     - Use only the supplied excerpts and abstracts; do not use external knowledge.
                     - Prioritize high-relevance excerpts, then use abstracts to resolve missing terminology or broader paper context.
                     - Search terms are hints only and must never be treated as supporting evidence.
@@ -1739,6 +2005,19 @@ def agent_etrag(
 # CONSENSUS ANALYSIS
 # ============================================================================
 
+def _is_not_covered_answer(answer):
+    """True when an agent's whole answer says the topic is outside the papers."""
+    answer = str(answer)
+    if re.match(r"\W*(?:NOT_COVERED|not covered|this (?:information|topic) is not covered"
+                r"|the answer was not found)", answer, re.IGNORECASE):
+        return True
+    # A short reply that is essentially "not covered". Replies that open with an
+    # option letter are selections whose "not covered" refers to one option.
+    if re.match(r"\W*[A-D](?:[\.\):,]|\s)", answer):
+        return False
+    return len(answer) < 200 and bool(re.search(r"\bnot[_ ]covered\b", answer, re.IGNORECASE))
+
+
 def synthesize_answer(question, r1, r2, r3, question_type='short_answer'):
     """Use GPT-4o-mini to:
     1. Evaluate each agent's answer for correctness
@@ -1747,9 +2026,24 @@ def synthesize_answer(question, r1, r2, r3, question_type='short_answer'):
 
     Returns dict with: synthesized_answer, consensus_level, consensus_message, confidence
     """
+    # [2026-09-28 PAPER-ALIGNMENT] Deterministic majority rule: when two or more
+    # agents report that the topic is outside the papers, the final answer says
+    # so. The LLM synthesis previously adopted a single agent's fabricated
+    # answer to the out-of-domain control question over two "not covered" votes.
+    valid_results = [r for r in (r1, r2, r3) if r.get('success', True)]
+    not_covered_votes = sum(_is_not_covered_answer(r['answer']) for r in valid_results)
+    if not_covered_votes >= 2:
+        return {
+            "synthesized_answer": "This topic is not covered in the uploaded research papers.",
+            "consensus": "NOT_COVERED",
+            "confidence": float(np.mean([r['confidence'] for r in valid_results if r['confidence'] > 0] or [0.5])),
+            "message": f"✅ Agents agree: topic not covered in uploaded papers "
+                       f"({not_covered_votes} of {len(valid_results)} agents)",
+        }
+
     try:
         # Build agent summary
-        agent_texts = f"""AGENT 1 — Paper Prefix [Confidence: {r1['confidence']:.0%}]:
+        agent_texts = f"""AGENT 1 — Full Context ({FULL_CONTEXT_MODEL}) [Confidence: {r1['confidence']:.0%}]:
 {r1['answer']}
 
 AGENT 2 — Cosine RAG (GPT-4o-mini) [Confidence: {r2['confidence']:.0%}]:
@@ -1758,7 +2052,7 @@ AGENT 2 — Cosine RAG (GPT-4o-mini) [Confidence: {r2['confidence']:.0%}]:
 AGENT 3 — ET-RAG (GPT-4o-mini) [Confidence: {r3['confidence']:.0%}]:
 {r3['answer']}
 
-SOURCE-SCOPE NOTE: Agent 1 received only the first {PAPER_PREFIX_CHAR_LIMIT:,} extracted characters of each paper. Its context was a set of leading prefixes, not summaries or full papers; therefore, an Agent 1 "not found" result applies only to those prefixes."""
+SOURCE-SCOPE NOTE: Agent 1 read the complete extracted text of every paper without retrieval; Agents 2 and 3 answered from retrieved excerpts."""
 
         # Use specialized prompt for multiple choice
         if question_type == 'multiple_choice':
@@ -2043,7 +2337,7 @@ def build_single_response(r1, r2, r3, question="", question_type="short_answer")
 
 ### 🔍 Individual Agent Responses
 
-#### 🌐 Agent 1: Paper Prefix (first {PAPER_PREFIX_CHAR_LIMIT:,} characters) — Confidence: {r1['confidence']:.0%}
+#### 🌐 Agent 1: Full Context ({FULL_CONTEXT_MODEL}) — Confidence: {r1['confidence']:.0%}
 {r1['answer']}
 {('📄 Sources: ' + ', '.join(r1['files_used'][:3])) if r1['files_used'] else ''}
 
@@ -2060,6 +2354,38 @@ def build_single_response(r1, r2, r3, question="", question_type="short_answer")
 {('📄 Sources: ' + ', '.join(r3['files_used'][:3])) if r3['files_used'] else ''}
 """
     return response, synthesis
+
+
+# [2026-09-28 PAPER-ALIGNMENT] One code path runs the manuscript's three agents
+# for the UI and the benchmark: Full Context (Gemini), Cosine RAG (top-15), and
+# ET-RAG in its full A3 configuration. ET-RAG now receives the parsed A-D
+# options so the option-focused hybrid passages are built, as in the ablation.
+def run_three_agents(question, q_type, paper_metadata, raw_texts, vs_cosine, vs_etrag):
+    """Run Agents 1-3 in parallel and return their result dicts."""
+    options = parse_question_options(question) if q_type in ('single_choice', 'multiple_choice') else {}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        f1 = executor.submit(agent_full_context, question, paper_metadata, raw_texts, q_type)
+        f2 = executor.submit(agent_cosine_rag, question, vs_cosine, q_type)
+        f3 = executor.submit(agent_etrag, question, vs_etrag, q_type, paper_metadata, raw_texts,
+                             options=options or None)
+        return f1.result(), f2.result(), f3.result()
+
+
+def build_result_row(question_id, question, q_type, r1, r2, r3, synthesis=None, elapsed=None):
+    """Flatten one question's agent outputs into a CSV row for later scoring."""
+    row = {'question_id': question_id, 'question_type': q_type, 'question_text': question}
+    for prefix, result in (('agent1_full_context', r1), ('agent2_cosine_rag', r2), ('agent3_etrag', r3)):
+        agent = prefix.split('_', 1)[0]
+        row[prefix] = result.get('answer', '')
+        row[f'{agent}_success'] = bool(result.get('success', False))
+        row[f'{agent}_confidence'] = round(float(result.get('confidence', 0.0)), 3)
+        row[f'{agent}_files_used'] = ', '.join(result.get('files_used', []))
+    if synthesis is not None:
+        row['synthesized_answer'] = synthesis.get('synthesized_answer', '')
+        row['consensus_level'] = synthesis.get('consensus', '')
+    if elapsed is not None:
+        row['response_time_sec'] = round(elapsed, 1)
+    return row
 
 
 def process_batch_in_chat(questions):
@@ -2084,38 +2410,17 @@ def process_batch_in_chat(questions):
         start_time = time.time()
 
         # Run all 3 agents IN PARALLEL with pre-extracted data
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            f1 = executor.submit(agent_paper_prefix, question, paper_metadata, raw_texts, q_type)
-            f2 = executor.submit(agent_cosine_rag, question, vs_cosine, q_type)
-            f3 = executor.submit(agent_etrag, question, vs_etrag, q_type, paper_metadata, raw_texts)
-            r1 = f1.result()
-            r2 = f2.result()
-            r3 = f3.result()
+        r1, r2, r3 = run_three_agents(question, q_type, paper_metadata, raw_texts, vs_cosine, vs_etrag)
 
         # GPT synthesis
         synthesis = synthesize_answer(question, r1, r2, r3, question_type=q_type)
 
         elapsed = time.time() - start_time
 
-        all_results.append({
-            'question_id': i + 1,
-            'question_text': question,
-            'question_type': q_type,
-            'synthesized_answer': synthesis['synthesized_answer'],
-            'consensus_level': synthesis['consensus'],
-            'consensus_message': synthesis['message'],
-            'avg_confidence': round(synthesis['confidence'], 2),
-            'agent1_paper_prefix': r1['answer'],
-            'agent1_confidence': r1['confidence'],
-            'agent1_files_used': ', '.join(r1['files_used']),
-            'agent2_cosine_rag': r2['answer'],
-            'agent2_confidence': r2['confidence'],
-            'agent2_files_used': ', '.join(r2['files_used']),
-            'agent3_etrag': r3['answer'],
-            'agent3_confidence': r3['confidence'],
-            'agent3_files_used': ', '.join(r3['files_used']),
-            'response_time_sec': round(elapsed, 1)
-        })
+        row = build_result_row(i + 1, question, q_type, r1, r2, r3, synthesis, elapsed)
+        row['consensus_message'] = synthesis['message']
+        row['avg_confidence'] = round(synthesis['confidence'], 2)
+        all_results.append(row)
 
         progress_bar.progress((i + 1) / total)
 
@@ -2156,8 +2461,8 @@ def process_batch_in_chat(questions):
         response += f"""### Q{row['question_id']} [{q_label}]
 **{row['question_text']}**
 
-#### 🌐 Agent 1: Paper Prefix (first {PAPER_PREFIX_CHAR_LIMIT:,} characters) — Confidence: {row['agent1_confidence']:.0%}
-{row['agent1_paper_prefix']}
+#### 🌐 Agent 1: Full Context ({FULL_CONTEXT_MODEL}) — Confidence: {row['agent1_confidence']:.0%}
+{row['agent1_full_context']}
 
 #### 🔍 Agent 2: Cosine RAG — Confidence: {row['agent2_confidence']:.0%}
 {row['agent2_cosine_rag']}
@@ -2188,6 +2493,7 @@ def main():
         page_icon="🧠",
         layout="wide"
     )
+    _init_session_state()
 
     # CSS to maximize chat area and fix width
     st.markdown("""
@@ -2301,13 +2607,7 @@ def main():
                 _vse = st.session_state.vector_store_etrag
 
                 with st.spinner("🤖 All 3 agents analyzing in parallel..."):
-                    with ThreadPoolExecutor(max_workers=3) as executor:
-                        f1 = executor.submit(agent_paper_prefix, q_text, _pm, _rt, q_type)
-                        f2 = executor.submit(agent_cosine_rag, q_text, _vsc, q_type)
-                        f3 = executor.submit(agent_etrag, q_text, _vse, q_type, _pm, _rt)
-                        r1 = f1.result()
-                        r2 = f2.result()
-                        r3 = f3.result()
+                    r1, r2, r3 = run_three_agents(q_text, q_type, _pm, _rt, _vsc, _vse)
                     response, _ = build_single_response(r1, r2, r3, question=q_text, question_type=q_type)
                     st.session_state.chat_history.append(("assistant", response))
 
@@ -2319,6 +2619,7 @@ def main():
                     # First time — save questions and start processing
                     st.session_state.batch_questions = questions
                     st.session_state.batch_index = 0
+                    st.session_state.batch_rows = []
                     st.session_state.chat_history.append(("user", user_input))
                     st.session_state.chat_history.append(("assistant", f"📋 Processing **{len(questions)}** questions. Results will appear one at a time..."))
                     st.rerun()
@@ -2337,15 +2638,13 @@ def main():
             q_type = q_item.get('type', classify_question_type(q_text)) if isinstance(q_item, dict) else classify_question_type(q_text)
 
             with st.spinner(f"🤖 Processing Q{i+1}/{total}: {q_text[:60]}..."):
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    f1 = executor.submit(agent_paper_prefix, q_text, _pm, _rt, q_type)
-                    f2 = executor.submit(agent_cosine_rag, q_text, _vsc, q_type)
-                    f3 = executor.submit(agent_etrag, q_text, _vse, q_type, _pm, _rt)
-                    r1 = f1.result()
-                    r2 = f2.result()
-                    r3 = f3.result()
+                question_started = time.time()
+                r1, r2, r3 = run_three_agents(q_text, q_type, _pm, _rt, _vsc, _vse)
 
-                response, _ = build_single_response(r1, r2, r3, question=q_text, question_type=q_type)
+                response, synthesis = build_single_response(r1, r2, r3, question=q_text, question_type=q_type)
+                st.session_state.batch_rows.append(build_result_row(
+                    i + 1, q_text, q_type, r1, r2, r3, synthesis, time.time() - question_started
+                ))
                 response = f"### Q{i+1}/{total} [{q_type.replace('_',' ').title()}]\n**{q_text}**\n\n{response}"
                 st.session_state.chat_history.append(("assistant", response))
 
@@ -2353,9 +2652,15 @@ def main():
 
             if st.session_state.batch_index >= total:
                 # Batch complete — clean up
-                st.session_state.chat_history.append(("assistant", f"✅ All **{total}** questions processed!"))
+                # Attach every agent's answers so they can be downloaded and scored.
+                st.session_state.chat_history.append((
+                    "assistant",
+                    f"✅ All **{total}** questions processed! Download the CSV to score the agents.",
+                    pd.DataFrame(st.session_state.batch_rows),
+                ))
                 del st.session_state.batch_questions
                 del st.session_state.batch_index
+                del st.session_state.batch_rows
 
             st.rerun()
 
@@ -2425,24 +2730,115 @@ def _build_example_chunks(full_text, metadata, filename):
 # [2026-08-27 RESTORED HYBRID ABSTRACT HELPER]
 # A3 already calls extract_abstract; the definition was absent from the current
 # file and caused the hybrid configuration to fail at runtime.
+# [2026-09-28 PAPER-ALIGNMENT] The original regex missed abstracts without an
+# "Abstract" heading (3 of the 10 benchmark papers) and, when no Keywords or
+# Introduction heading followed, ran on into the body (7,000+ words for the 2021
+# primer). The new version searches only the first two pages, stops at
+# front-matter markers or the page break, and falls back to the first prose
+# block on page 1 when there is no heading.
+# ORIGINAL CODE (retained as requested):
+# def extract_abstract(full_text):
+#     cleaned_text = re.sub(r"\[Page \d+\]:", " ", full_text, flags=re.IGNORECASE)
+#     cleaned_text = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", cleaned_text)
+#     match = re.search(
+#         r"\bAbstract\b\s*(.*?)"
+#         r"(?=\b(?:Keywords?|Sections?|Introduction|Background)\b)",
+#         cleaned_text, flags=re.IGNORECASE | re.DOTALL)
+#     if not match:
+#         return "Abstract not found."
+#     return re.sub(r"\s+", " ", match.group(1)).strip()
+ABSTRACT_MAX_CHARS = 3_000
+_ABSTRACT_STOP = re.compile(
+    r"\n\s*(?:\d+\.?\s*)?(?:Keywords?|Key words|Introduction|Background|Sections?)\b"
+    r"|(?<=\.)Sections\b|\*?\s*Correspondence:|Full list of author information"
+    r"|✉|\be-\s?mail\b|https?://|\bdoi\.org\b|©",
+    re.IGNORECASE,
+)
+_FRONT_MATTER_LINE = re.compile(
+    r"department|universit|college|institute|hospital|correspond|copyright|licen[cs]e"
+    r"|open access|creative commons|properly cited|received|accepted|revised|editor"
+    r"|volume|doi|https?://|@|review article|research article",
+    re.IGNORECASE,
+)
+
+
+def _trim_to_sentence(text, limit=ABSTRACT_MAX_CHARS):
+    """Normalize whitespace and cut at the last sentence end within the limit."""
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = cut.rfind(". ")
+    return cut[:end + 1] if end > limit // 2 else cut
+
+
 def extract_abstract(full_text):
-    """Extract and normalize the Abstract section from PDF text."""
-    cleaned_text = re.sub(
-        r"\[Page \d+\]:",
-        " ",
-        full_text,
-        flags=re.IGNORECASE,
-    )
-    cleaned_text = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", cleaned_text)
-    match = re.search(
-        r"\bAbstract\b\s*(.*?)"
-        r"(?=\b(?:Keywords?|Sections?|Introduction|Background)\b)",
-        cleaned_text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if not match:
-        return "Abstract not found."
-    return re.sub(r"\s+", " ", match.group(1)).strip()
+    """Extract and normalize the abstract from PDF text (first two pages only)."""
+    pages = re.split(r"\[Page \d+\]:", full_text)
+    pages = [page for page in pages if page.strip()][:2]
+    front = "\n".join(pages)
+    front = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", front)
+
+    heading = re.search(r"(?:^|\n)\s*abstract\b\s*[:|.\-–—]?\s*", front, re.IGNORECASE)
+    if heading:
+        body = front[heading.end():]
+        stop = _ABSTRACT_STOP.search(body)
+        body = body[:stop.start()] if stop else body
+        page_break = body.find("\n\n\n")
+        body = body[:page_break] if page_break > 200 else body
+        abstract = _trim_to_sentence(body)
+        if len(abstract) >= 200:
+            return abstract
+
+    # No heading: the abstract is the first run of prose lines on page 1.
+    first_page = pages[0] if pages else ""
+    lines = [line.strip() for line in first_page.splitlines()]
+    prose = []
+    for line in lines:
+        words = line.split()
+        lowercase_share = sum(word[:1].islower() for word in words) / max(len(words), 1)
+        is_prose = (
+            len(line) >= 50
+            and len(words) >= 7
+            and lowercase_share >= 0.4  # author lists are mostly capitalized names
+            and "✉" not in line
+            and not _FRONT_MATTER_LINE.search(line)
+        )
+        if is_prose:
+            prose.append(line)
+        elif prose and len(" ".join(prose)) >= 400:
+            break
+        else:
+            prose = []
+    abstract = " ".join(prose)
+    stop = _ABSTRACT_STOP.search("\n" + abstract)
+    abstract = abstract[:max(stop.start() - 1, 0)] if stop else abstract
+    abstract = _trim_to_sentence(abstract, limit=2_000)
+    return abstract if len(abstract) >= 200 else "Abstract not found."
+
+
+# [2026-09-28 PAPER-ALIGNMENT] Manually verified metadata for the 10-paper
+# benchmark corpus (manuscript references 36-45). Several filenames carry a
+# different year from the publication year, and one has no year at all, so the
+# filename is only a fallback. All ten are narrative reviews (prior 0.50).
+VERIFIED_BENCHMARK_METADATA = {
+    "alzheimer disease  2021.pdf": ("Alzheimer disease", "2021"),
+    "Recent advances in Alzheimer’s disease mechanisms clinical trials and new drug development strategies.pdf": (
+        "Recent advances in Alzheimer's disease: mechanisms, clinical trials and new drug development strategies", "2024"),
+    "2024 Neuroinflammation in Alzheimer disease.pdf": ("Neuroinflammation in Alzheimer disease", "2025"),
+    "2024 Immune Activation in Alzheimer Disease.pdf": ("Immune activation in Alzheimer disease", "2024"),
+    "2024 Cell type-specific roles of APOE4 in Alzheimer disease.pdf": (
+        "Cell type-specific roles of APOE4 in Alzheimer disease", "2024"),
+    "2025 Oligodendrocytes in Alzheimer’s disease pathophysiology.pdf": (
+        "Oligodendrocytes in Alzheimer's disease pathophysiology", "2025"),
+    "2025 Updates on mouse models of Alzheimer’s disease.pdf": ("Updates on mouse models of Alzheimer's disease", "2024"),
+    "2023-oxidative-damage-in-neurodegeneration-roles-in-the-pathogenesis-and-progression-of-alzheimer-disease.pdf": (
+        "Oxidative damage in neurodegeneration: roles in the pathogenesis and progression of Alzheimer disease", "2024"),
+    "2024 Advancements and Challenges in Antiamyloid Therapy for.pdf": (
+        "Advancements and challenges in antiamyloid therapy for Alzheimer's disease: a comprehensive review", "2024"),
+    "2024 Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease.pdf": (
+        "Linking activity dyshomeostasis and sleep disturbances in Alzheimer disease", "2024"),
+}
 
 
 def _load_evaluation_papers(papers_dir):
@@ -2466,15 +2862,18 @@ def _load_evaluation_papers(papers_dir):
 
         embedded_metadata = reader.metadata or {}
         year_match = re.search(r"(20\d{2})", pdf_path.name)
+        verified_title, verified_year = VERIFIED_BENCHMARK_METADATA.get(
+            unicodedata.normalize("NFC", pdf_path.name), (None, None)
+        )
         metadata = {
             "filename": pdf_path.name,
-            "title": embedded_metadata.get("/Title") or pdf_path.stem,
+            "title": verified_title or embedded_metadata.get("/Title") or pdf_path.stem,
             "authors": (
                 [embedded_metadata.get("/Author")]
                 if embedded_metadata.get("/Author")
                 else []
             ),
-            "year": year_match.group(1) if year_match else "Unknown",
+            "year": verified_year or (year_match.group(1) if year_match else "Unknown"),
             # The supplied corpus directory contains review papers.
             "study_type": "review",
             "pages": len(reader.pages),
@@ -2497,6 +2896,9 @@ def _evaluation_cache_manifest(pdf_files):
     """Describe the corpus/configuration used to build the cached FAISS index."""
     return {
         "embedding_model": "text-embedding-3-small",
+        # [2026-09-28 PAPER-ALIGNMENT] Chunk headers embed title/year, so a
+        # metadata change must invalidate the cached index.
+        "verified_metadata": {name: list(value) for name, value in VERIFIED_BENCHMARK_METADATA.items()},
         "chunk_size": CHUNK_SIZE,
         "chunk_overlap": CHUNK_OVERLAP,
         "files": [
