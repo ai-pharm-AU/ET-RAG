@@ -102,11 +102,11 @@ Tested on 40 questions across 4 types using 10 Alzheimer's disease papers (2021â
 
 | Question Type | Paper Prefix | Cosine RAG | ET-RAG |
 |--------------|-------------|------------|--------|
-| Single Choice (10) | 90% | 90% | **90%** |
-| Multiple Choice (10) | 0.58 | 0.33 | **0.59** |
-| Short Answer (10) | 0.89 | 0.63 | **0.91** |
-| Long Answer (10) | 0.81 | 0.58 | **0.85** |
-| **Combined** | 0.80 | 0.61 | **0.81** |
+| Single Choice (10) | 0.90 | **0.93** | **0.90** |
+| Multiple Choice (10) | 0.32 | 0.40 | **0.74** |
+| Short Answer (10) | 0.74 | 0.76 | **0.81** |
+| Long Answer (10) | 0.66 | **0.72** | 0.71 |
+| **Combined** | 0.66 | 0.70 | **0.79** |
 
 - Hallucination rate: **0%** (control question correctly rejected)
 - ET-RAG reranking overhead: **< 5%** of total query time
